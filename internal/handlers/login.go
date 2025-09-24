@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 )
 
@@ -28,9 +27,4 @@ func NewLoginHandler() http.HandlerFunc {
 			Token: "JWT_TOKEN",
 		})
 	}
-}
-
-// RegisterLoginHandler registers routes for user login
-func RegisterLoginHandler(r chi.Router, h http.HandlerFunc) {
-	r.Post("/login", h)
 }

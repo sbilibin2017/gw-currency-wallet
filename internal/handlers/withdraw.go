@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 )
 
@@ -35,9 +34,4 @@ func NewWithdrawHandler() http.HandlerFunc {
 			},
 		})
 	}
-}
-
-// RegisterWithdrawHandler registers routes for withdrawing funds
-func RegisterWithdrawHandler(r chi.Router, h http.HandlerFunc) {
-	r.Post("/wallet/withdraw", h)
 }

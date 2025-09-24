@@ -4,34 +4,38 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
+	pb "github.com/sbilibin2017/proto-exchange/exchange"
 )
 
-// NewGetRatesHandler handles fetching current exchange rates
-// @Summary Get exchange rates
-// @Description Returns current exchange rates for supported currencies
-// @Tags exchange
-// @Produce json
-// @Success 200 {object} models.RatesResponse
-// @Failure 500 {object} models.RatesErrorResponse
-// @Router /exchange/rates [get]
-// @Security Bearer
-func NewGetRatesHandler() http.HandlerFunc {
+// NewGetRatesHandlerWithClient returns an HTTP handler that fetches exchange rates via gRPC.
+// exchangeClient: a connected pb.ExchangeServiceClient
+func NewGetRatesHandlerWithClient(exchangeClient pb.ExchangeServiceClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		ctx := r.Context()
+
+		// Call gRPC GetExchangeRates
+		resp, err := exchangeClient.GetExchangeRates(ctx, &pb.Empty{})
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(models.RatesErrorResponse{
+				Error: err.Error(),
+			})
+			return
+		}
+
+		// Convert gRPC map to internal models.Rates
+		rates := models.Rates{
+			USD: float64(resp.Rates["USD"]),
+			RUB: float64(resp.Rates["RUB"]),
+			EUR: float64(resp.Rates["EUR"]),
+		}
+
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(models.RatesResponse{
-			Rates: models.Rates{
-				USD: 1.0,
-				RUB: 90.0,
-				EUR: 0.85,
-			},
+			Rates: rates,
 		})
 	}
-}
-
-// RegisterGetRatesHandler registers routes for fetching exchange rates
-func RegisterGetRatesHandler(r chi.Router, h http.HandlerFunc) {
-	r.Get("/exchange/rates", h)
 }

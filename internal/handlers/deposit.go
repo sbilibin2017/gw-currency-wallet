@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 )
 
@@ -35,9 +34,4 @@ func NewDepositHandler() http.HandlerFunc {
 			},
 		})
 	}
-}
-
-// RegisterDepositHandler registers routes for depositing funds
-func RegisterDepositHandler(r chi.Router, h http.HandlerFunc) {
-	r.Post("/wallet/deposit", h)
 }

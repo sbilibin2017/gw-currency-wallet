@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 )
 
@@ -28,9 +27,4 @@ func NewRegisterHandler() http.HandlerFunc {
 			Message: "User registered successfully",
 		})
 	}
-}
-
-// RegisterRegisterHandler registers routes for user registration
-func RegisterRegisterHandler(r chi.Router, h http.HandlerFunc) {
-	r.Post("/register", h)
 }
