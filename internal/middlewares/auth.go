@@ -10,10 +10,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Key type for storing user info in context
-type contextKey string
+// userContextKey type for storing user info in context
+type userContextKey string
 
-const userContextKey contextKey = "user"
+const userKey userContextKey = "user"
 
 // claims struct
 type claims struct {
@@ -57,7 +57,7 @@ func AuthMiddleware(jwtSecretKey []byte) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), userContextKey, claims.Username)
+			ctx := context.WithValue(r.Context(), userKey, claims.Username)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -65,6 +65,6 @@ func AuthMiddleware(jwtSecretKey []byte) func(http.Handler) http.Handler {
 
 // GetUserFromContext gets username from context
 func GetUserFromContext(ctx context.Context) (string, bool) {
-	user, ok := ctx.Value(userContextKey).(string)
+	user, ok := ctx.Value(userKey).(string)
 	return user, ok
 }

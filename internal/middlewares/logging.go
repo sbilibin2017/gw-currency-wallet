@@ -1,7 +1,6 @@
 package middlewares
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,13 +10,11 @@ import (
 )
 
 // LoggingMiddleware returns a middleware that logs requests and responses using the provided SugaredLogger.
-// It also generates a unique request ID for each HTTP request.
+// It generates a unique request ID for each HTTP request.
 func LoggingMiddleware(log *zap.SugaredLogger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Generate a new UUID for this request
 			reqID := uuid.New().String()
-
 			start := time.Now()
 
 			rw := &responseWriter{
@@ -25,10 +22,6 @@ func LoggingMiddleware(log *zap.SugaredLogger) func(http.Handler) http.Handler {
 				statusCode:     http.StatusOK,
 			}
 
-			// Add request ID to context and headers for downstream handlers
-			r = r.WithContext(
-				context.WithValue(r.Context(), "requestID", reqID),
-			)
 			w.Header().Set("X-Request-ID", reqID)
 
 			next.ServeHTTP(rw, r)
