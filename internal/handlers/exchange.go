@@ -1,17 +1,41 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
 	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
-	pb "github.com/sbilibin2017/proto-exchange/exchange"
 )
 
-// NewExchangeHandlerWithClient returns an HTTP handler that performs currency exchange using gRPC.
-// exchangeClient: a connected pb.ExchangeServiceClient
-func NewExchangeHandlerWithClient(exchangeClient pb.ExchangeServiceClient) http.HandlerFunc {
+// Exchanger defines the interface that the service must implement.
+type Exchanger interface {
+	Exchange(ctx context.Context, username, fromCurrency, toCurrency string, amount float64) (exchangedAmount float64, newBalance *models.BalanceResponse, err error)
+}
+
+// NewExchangeHandler returns an HTTP handler for performing currency exchange.
+// @Summary Exchange currency
+// @Description Exchange funds from one currency to another. Checks user balance and updates it accordingly.
+// @Tags exchange
+// @Accept json
+// @Produce json
+// @Param request body models.ExchangeRequest true "Exchange Request"
+// @Success 200 {object} models.ExchangeResponse "Exchange successful"
+// @Failure 400 {object} models.ExchangeErrorResponse "Insufficient funds or invalid currencies"
+// @Failure 401 {object} models.ExchangeErrorResponse "Unauthorized"
+// @Router /exchange [post]
+// @Security BearerAuth
+func NewExchangeHandler(svc Exchanger, tokenGetter func(ctx context.Context) (string, bool)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		username, ok := tokenGetter(r.Context())
+		if !ok || username == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(models.ExchangeErrorResponse{
+				Error: "unauthorized",
+			})
+			return
+		}
+
 		var req models.ExchangeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -21,46 +45,23 @@ func NewExchangeHandlerWithClient(exchangeClient pb.ExchangeServiceClient) http.
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-
-		ctx := r.Context()
-		// Call gRPC GetExchangeRateForCurrency
-		grpcResp, err := exchangeClient.GetExchangeRateForCurrency(ctx, &pb.CurrencyRequest{
-			FromCurrency: req.FromCurrency,
-			ToCurrency:   req.ToCurrency,
-		})
+		exchangedAmount, newBalance, err := svc.Exchange(r.Context(), username, req.FromCurrency, req.ToCurrency, req.Amount)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
+			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(models.ExchangeErrorResponse{
 				Error: err.Error(),
 			})
 			return
 		}
 
-		// Calculate exchanged amount
-		exchangedAmount := req.Amount * float64(grpcResp.Rate)
-
-		// TODO: Update user balance in DB / Redis as needed
-		// For now, we return a dummy new balance
-		newBalance := models.CurrencyBalance{
-			USD: 0.0,
-			RUB: 0.0,
-			EUR: 0.0,
-		}
-		switch req.ToCurrency {
-		case "USD":
-			newBalance.USD = exchangedAmount
-		case "RUB":
-			newBalance.RUB = exchangedAmount
-		case "EUR":
-			newBalance.EUR = exchangedAmount
-		}
-
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(models.ExchangeResponse{
+		resp := models.ExchangeResponse{
 			Message:         "Exchange successful",
 			ExchangedAmount: exchangedAmount,
-			NewBalance:      newBalance,
-		})
+			NewBalance:      *newBalance.Balance,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 }
