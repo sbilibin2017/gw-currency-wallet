@@ -2,69 +2,37 @@ package middlewares
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"strings"
-	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
 )
 
-// userContextKey type for storing user info in context
-type userContextKey string
-
-const userKey userContextKey = "user"
-
-// claims struct
-type claims struct {
-	Username string `json:"username"`
-	jwt.RegisteredClaims
+// Tokener defines the minimal interface needed by the middleware
+type Tokener interface {
+	GetTokenFromRequest(ctx context.Context, r *http.Request) (string, error)
+	Validate(ctx context.Context, tokenString string) error
 }
 
-// AuthMiddleware returns a middleware with a custom JWT secret
-func AuthMiddleware(jwtSecretKey []byte) func(http.Handler) http.Handler {
+// AuthMiddleware returns a middleware that validates JWT using a JWTProvider
+func AuthMiddleware(tokener Tokener) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				http.Error(w, "Authorization header missing", http.StatusUnauthorized)
+			ctx := r.Context()
+
+			tokenString, err := tokener.GetTokenFromRequest(ctx, r)
+			if err != nil {
+				logger.Log.Errorw("authorization failed", "err", err)
+				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 
-			parts := strings.Split(authHeader, " ")
-			if len(parts) != 2 || parts[0] != "Bearer" {
-				http.Error(w, "Invalid Authorization header format", http.StatusUnauthorized)
+			if err := tokener.Validate(ctx, tokenString); err != nil {
+				logger.Log.Errorw("authorization failed", "err", err)
+				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 
-			tokenString := parts[1]
-			claims := &claims{}
-
-			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-					return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-				}
-				return jwtSecretKey, nil
-			})
-
-			if err != nil || !token.Valid {
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
-				return
-			}
-
-			if claims.ExpiresAt != nil && claims.ExpiresAt.Before(time.Now()) {
-				http.Error(w, "Token expired", http.StatusUnauthorized)
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), userKey, claims.Username)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
-}
-
-// GetUserFromContext gets username from context
-func GetUserFromContext(ctx context.Context) (string, bool) {
-	user, ok := ctx.Value(userKey).(string)
-	return user, ok
 }

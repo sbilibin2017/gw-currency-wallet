@@ -13,11 +13,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/sbilibin2017/gw-currency-wallet/internal/facades"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/handlers"
 
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
@@ -28,7 +29,7 @@ import (
 	"github.com/sbilibin2017/gw-currency-wallet/internal/middlewares"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	// pb "github.com/sbilibin2017/proto-exchange/exchange"
+	pb "github.com/sbilibin2017/proto-exchange/exchange"
 	httpSwagger "github.com/swaggo/http-swagger"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -168,36 +169,41 @@ func run(ctx context.Context,
 	pgHost string, pgPort int, pgUser, pgPassword, pgDB string,
 	pgMaxOpenConns, pgMaxIdleConns int,
 	redisHost string, redisPort, redisDB int, redisPassword string,
-	redisPoolSize, redisMinIdleConns int,
+	redisPoolSize, redisMinIdleConns int, redisExp int,
 	gwHost, gwPort, logLevel string,
 	jwtSecretKey string, jwtExpSecond int,
 ) error {
+	// -----------------------
 	// Initialize logger
-	log, err := logger.New(logLevel)
-	if err != nil {
+	// -----------------------
+	if err := logger.Initialize(logLevel); err != nil {
 		fmt.Println("failed to initialize logger:", err)
 		return err
 	}
-	defer log.Sync()
-	log.Infof("Logger initialized with level %s", logLevel)
+	defer logger.Log.Sync()
+	logger.Log.Infof("Logger initialized with level %s", logLevel)
 
+	// -----------------------
 	// Connect to PostgreSQL
+	// -----------------------
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		pgUser, pgPassword, pgHost, pgPort, pgDB)
-	log.Infof("Connecting to PostgreSQL: %s", dsn)
-
 	db, err := sqlx.ConnectContext(ctx, "pgx", dsn)
 	if err != nil {
-		log.Fatal("PostgreSQL connection error:", err)
+		logger.Log.Error("PostgreSQL connection error:", err)
+		return err
 	}
 	defer db.Close()
 	db.SetMaxOpenConns(pgMaxOpenConns)
 	db.SetMaxIdleConns(pgMaxIdleConns)
 	if err := db.PingContext(ctx); err != nil {
-		log.Fatal("PostgreSQL ping failed:", err)
+		logger.Log.Error("PostgreSQL ping failed:", err)
+		return err
 	}
 
+	// -----------------------
 	// Connect to Redis
+	// -----------------------
 	rdb := redis.NewClient(&redis.Options{
 		Addr:         fmt.Sprintf("%s:%d", redisHost, redisPort),
 		Password:     redisPassword,
@@ -206,74 +212,97 @@ func run(ctx context.Context,
 		MinIdleConns: redisMinIdleConns,
 	})
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Fatal("Redis connection error:", err)
+		logger.Log.Error("Redis connection error:", err)
+		return err
 	}
 	defer rdb.Close()
 
+	// -----------------------
 	// Connect to gRPC service
+	// -----------------------
 	grpcAddr := fmt.Sprintf("%s:%s", gwHost, gwPort)
-	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatal("Failed to connect to gRPC service at", grpcAddr, ":", err)
+		logger.Log.Error("Failed to connect to gRPC service at", grpcAddr, ":", err)
+		return err
 	}
 	defer conn.Close()
-	// exchangeClient := pb.NewExchangeServiceClient(conn)
+	exchangeGRPCClient := pb.NewExchangeServiceClient(conn)
 
-	// Initialize JWT service
-	jwt := jwt.New(jwtSecretKey, time.Duration(jwtExpSecond)*time.Second)
+	jwtService := jwt.New(
+		jwt.WithSecretKey(jwtSecretKey),
+		jwt.WithExpiration(time.Duration(jwtExpSecond)*time.Second),
+	)
 
-	// Initialize repositories
-	userReadRepo := repositories.NewUserReadRepository(db, log)
-	userWriteRepo := repositories.NewUserWriteRepository(db, log)
+	userReadRepo := repositories.NewUserReadRepository(db)
+	userWriteRepo := repositories.NewUserWriteRepository(db)
 
-	// Initialize services
-	authService := services.NewAuthService(userReadRepo, userWriteRepo, jwt, log)
+	walletReaderRepo := repositories.NewWalletReaderRepository(db)
+	walletWriterRepo := repositories.NewWalletWriterRepository(db, nil)
 
-	// Initialize handlers
-	registerHandler := handlers.NewRegisterHandler(authService, log)
-	loginHandler := handlers.NewLoginHandler(authService, log)
-	// balanceHandler := handlers.NewGetBalanceHandler()
-	// depositHandler := handlers.NewDepositHandler()
-	// withdrawHandler := handlers.NewWithdrawHandler()
-	// getRatesHandler := handlers.NewGetRatesHandlerWithClient(exchangeClient)
-	// exchangeHandler := handlers.NewExchangeHandlerWithClient(exchangeClient)
+	exchangeRateCacheRepo := repositories.NewExchangeRateCacheRepository(rdb, time.Duration(redisExp*time.Second))
 
+	exchangeGRPCFacade := facades.NewExchangeRatesGRPCFacade(exchangeGRPCClient)
+
+	authService := services.NewAuthService(userReadRepo, userWriteRepo, jwtService)
+	exchangeService := services.NewExchangeService(
+		walletWriterRepo,
+		walletReaderRepo,
+		exchangeGRPCFacade,
+		exchangeRateCacheRepo,
+	)
+
+	registerHandler := handlers.NewRegisterHandler(authService)
+	loginHandler := handlers.NewLoginHandler(authService)
+
+	balanceHandler := handlers.NewGetBalanceHandler(walletReaderRepo, jwtService)
+	depositHandler := handlers.NewDepositHandler(walletWriterRepo, jwtService)
+	withdrawHandler := handlers.NewWithdrawHandler(walletWriterRepo, jwtService)
+
+	getRatesHandler := handlers.NewGetExchangeRatesHandler(exchangeService, jwtService)
+	exchangeHandler := handlers.NewExchangeHandler(jwtService, exchangeService)
+
+	// -----------------------
 	// Setup router
+	// -----------------------
 	r := chi.NewRouter()
-	r.Use(chimiddleware.Recoverer)
-	r.Use(middlewares.LoggingMiddleware(log))
+	r.Use(middleware.Recoverer)
+	r.Use(middlewares.LoggingMiddleware)
 
-	// // Public routes
+	// Public routes
 	r.Post("/register", registerHandler)
 	r.Post("/login", loginHandler)
 
-	// // Protected routes with JWT middleware
-	// authMiddleware := middlewares.AuthMiddleware([]byte(jwtSecret))
-	// r.Group(func(r chi.Router) {
-	// 	r.Use(authMiddleware)
-	// 	r.Get("/balance", balanceHandler)
-	// 	r.Post("/wallet/deposit", depositHandler)
-	// 	r.Post("/wallet/withdraw", withdrawHandler)
-	// 	r.Get("/exchange/rates", getRatesHandler)
-	// 	r.Post("/exchange", exchangeHandler)
-	// })
+	// Protected routes
+	authMiddleware := middlewares.AuthMiddleware([]byte(jwtSecretKey))
+	r.Group(func(r chi.Router) {
+		r.Use(authMiddleware)
+		r.Get("/balance", balanceHandler)
+		r.Post("/wallet/deposit", depositHandler)
+		r.Post("/wallet/withdraw", withdrawHandler)
+		r.Get("/exchange/rates", getRatesHandler)
+		r.Post("/exchange", exchangeHandler)
+	})
 
+	// Swagger
 	r.Get("/swagger/*", httpSwagger.Handler(
 		httpSwagger.URL(fmt.Sprintf("http://%s:%s/swagger/doc.json", appHost, appPort)),
 	))
 
+	// -----------------------
+	// Start HTTP server with graceful shutdown
+	// -----------------------
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("%s:%s", appHost, appPort),
 		Handler: r,
 	}
 
-	// Graceful shutdown
 	errChan := make(chan error, 1)
 	ctxShutdown, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()
 
 	go func() {
-		log.Infof("HTTP server listening on %s:%s", appHost, appPort)
+		logger.Log.Infof("HTTP server listening on %s:%s", appHost, appPort)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errChan <- fmt.Errorf("HTTP server failed: %w", err)
 		}
@@ -281,7 +310,7 @@ func run(ctx context.Context,
 
 	select {
 	case <-ctxShutdown.Done():
-		log.Info("Shutdown signal received, stopping HTTP server...")
+		logger.Log.Info("Shutdown signal received, stopping HTTP server...")
 	case serveErr := <-errChan:
 		return serveErr
 	}
@@ -289,9 +318,9 @@ func run(ctx context.Context,
 	shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Errorw("HTTP server shutdown error", "error", err)
+		logger.Log.Errorw("HTTP server shutdown error", "error", err)
 	}
 
-	log.Info("HTTP server stopped gracefully")
+	logger.Log.Info("HTTP server stopped gracefully")
 	return nil
 }

@@ -5,12 +5,50 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 )
 
-// ExchangeRater defines the interface that the service must implement.
-type ExchangeRater interface {
-	GetExchangeRates(ctx context.Context) (*models.ExchangeRates, error)
+// ExchangeRatesTokener defines only the methods needed by this handler.
+type ExchangeRatesTokener interface {
+	GetTokenFromRequest(ctx context.Context, r *http.Request) (string, error)
+	GetClaims(ctx context.Context, tokenString string) (*jwt.Claims, error)
+}
+
+// ExchangeRatesReader defines the interface for fetching exchange rates.
+type ExchangeRatesReader interface {
+	GetExchangeRates(ctx context.Context) (map[string]float32, error)
+}
+
+// ExchangeRates represents exchange rates for supported currencies
+// swagger:model ExchangeRates
+type ExchangeRates struct {
+	// USD exchange rate
+	// default: 1.0
+	USD float32 `json:"USD"`
+
+	// RUB exchange rate
+	// default: 90.0
+	RUB float32 `json:"RUB"`
+
+	// EUR exchange rate
+	// default: 0.85
+	EUR float32 `json:"EUR"`
+}
+
+// ExchangeRatesResponse represents a successful response with exchange rates
+// swagger:model ExchangeRatesResponse
+type ExchangeRatesResponse struct {
+	// Exchange rates
+	Rates ExchangeRates `json:"rates"`
+}
+
+// ExchangeRatesErrorResponse represents an error response when fetching exchange rates
+// swagger:model ExchangeRatesErrorResponse
+type ExchangeRatesErrorResponse struct {
+	// Error message
+	// default: Failed to retrieve exchange rates
+	Error string `json:"error"`
 }
 
 // NewGetExchangeRatesHandler returns an HTTP handler for fetching currency exchange rates.
@@ -18,37 +56,56 @@ type ExchangeRater interface {
 // @Description Fetches current exchange rates for all supported currencies
 // @Tags exchange
 // @Produce json
-// @Success 200 {object} models.ExchangeRatesResponse "Exchange rates"
-// @Failure 500 {object} models.ExchangeRatesErrorResponse "Failed to retrieve exchange rates"
-// @Failure 401 {object} models.ExchangeRatesErrorResponse "Unauthorized"
+// @Success 200 {object} ExchangeRatesResponse "Exchange rates"
+// @Failure 500 {object} ExchangeRatesErrorResponse "Failed to retrieve exchange rates"
+// @Failure 401 {object} ExchangeRatesErrorResponse "Unauthorized"
 // @Router /exchange/rates [get]
 // @Security BearerAuth
-func NewGetExchangeRatesHandler(svc ExchangeRater, tokenGetter func(ctx context.Context) (string, bool)) http.HandlerFunc {
+func NewGetExchangeRatesHandler(
+	reader ExchangeRatesReader,
+	tokenGetter ExchangeRatesTokener,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		username, ok := tokenGetter(r.Context())
-		if !ok || username == "" {
+		ctx := r.Context()
+
+		tokenStr, err := tokenGetter.GetTokenFromRequest(ctx, r)
+		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(models.ExchangeRatesErrorResponse{
-				Error: "unauthorized",
-			})
+			json.NewEncoder(w).Encode(ExchangeRatesErrorResponse{Error: "Unauthorized"})
 			return
 		}
 
-		rates, err := svc.GetExchangeRates(r.Context())
+		_, err = tokenGetter.GetClaims(ctx, tokenStr)
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(ExchangeRatesErrorResponse{Error: "Unauthorized"})
+			return
+		}
+
+		ratesMap, err := reader.GetExchangeRates(ctx)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(models.ExchangeRatesErrorResponse{
-				Error: "Failed to retrieve exchange rates",
-			})
+			json.NewEncoder(w).Encode(ExchangeRatesErrorResponse{Error: "Failed to retrieve exchange rates"})
 			return
 		}
 
-		resp := models.ExchangeRatesResponse{
-			Rates: *rates,
+		getRate := func(currency string) float32 {
+			if val, ok := ratesMap[currency]; ok {
+				return val
+			}
+			return 0.0
+		}
+
+		resp := ExchangeRatesResponse{
+			Rates: ExchangeRates{
+				USD: getRate(models.USD),
+				RUB: getRate(models.RUB),
+				EUR: getRate(models.EUR),
+			},
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
+		json.NewEncoder(w).Encode(resp)
 	}
 }

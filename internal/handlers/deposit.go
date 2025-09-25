@@ -5,12 +5,69 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/google/uuid"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 )
 
-// Depositor defines the interface that the service must implement.
-type Depositor interface {
-	Deposit(ctx context.Context, username string, amount float64, currency string) (*models.CurrencyBalance, error)
+// DepositTokener defines only the methods needed by this handler.
+type DepositTokener interface {
+	GetTokenFromRequest(ctx context.Context, r *http.Request) (string, error)
+	GetClaims(ctx context.Context, tokenString string) (*jwt.Claims, error)
+}
+
+// WalletDepositWriter defines the interface that the service must implement.
+type WalletDepositWriter interface {
+	UpdateDeposit(ctx context.Context, userID uuid.UUID, amount float64, currency string) (map[string]float64, error)
+}
+
+// CurrencyBalanceAfterDeposit represents balances for different currencies
+// swagger:model CurrencyDeposit
+type CurrencyBalanceAfterDeposit struct {
+	// Balance in USD
+	// default: 100.0
+	USD float64 `json:"USD"`
+
+	// Balance in RUB
+	// default: 5000.0
+	RUB float64 `json:"RUB"`
+
+	// Balance in EUR
+	// default: 50.0
+	EUR float64 `json:"EUR"`
+}
+
+// DepositRequest represents the JSON body for depositing funds
+// swagger:model DepositRequest
+type DepositRequest struct {
+	// Amount to deposit
+	// required: true
+	// default: 100.0
+	Amount float64 `json:"amount"`
+
+	// Currency
+	// required: true
+	// default: USD
+	Currency string `json:"currency"`
+}
+
+// DepositResponse represents a successful deposit response
+// swagger:model DepositResponse
+type DepositResponse struct {
+	// Success message
+	// default: Account topped up successfully
+	Message string `json:"message"`
+
+	// New balance of the user
+	NewBalance CurrencyBalanceAfterDeposit `json:"new_balance"`
+}
+
+// DepositErrorResponse represents an error response for deposit
+// swagger:model DepositErrorResponse
+type DepositErrorResponse struct {
+	// Error message
+	// default: Invalid amount or currency
+	Error string `json:"error"`
 }
 
 // NewDepositHandler returns an HTTP handler for depositing funds into user wallet.
@@ -25,42 +82,78 @@ type Depositor interface {
 // @Failure 401 {object} models.DepositErrorResponse "Unauthorized"
 // @Router /wallet/deposit [post]
 // @Security BearerAuth
-func NewDepositHandler(svc Depositor, tokenGetter func(ctx context.Context) (string, bool)) http.HandlerFunc {
+func NewDepositHandler(
+	svc WalletDepositWriter,
+	tokenGetter DepositTokener,
+) http.HandlerFunc {
+	validCurrencies := map[string]struct{}{
+		models.USD: {},
+		models.RUB: {},
+		models.EUR: {},
+	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
-		username, ok := tokenGetter(r.Context())
-		if !ok {
+		ctx := r.Context()
+
+		tokenStr, err := tokenGetter.GetTokenFromRequest(ctx, r)
+		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(models.DepositErrorResponse{
-				Error: "unauthorized",
-			})
+			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Unauthorized"})
 			return
 		}
 
-		var req models.DepositRequest
+		claims, err := tokenGetter.GetClaims(ctx, tokenStr)
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Unauthorized"})
+			return
+		}
+
+		var req DepositRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(models.DepositErrorResponse{
-				Error: "invalid request body",
-			})
+			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Invalid request body"})
 			return
 		}
 
-		newBalance, err := svc.Deposit(r.Context(), username, req.Amount, req.Currency)
-		if err != nil {
+		if req.Amount <= 0 {
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(models.DepositErrorResponse{
-				Error: err.Error(),
-			})
+			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Invalid amount or currency"})
+			return
+		}
+		if _, ok := validCurrencies[req.Currency]; !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Invalid amount or currency"})
 			return
 		}
 
-		resp := models.DepositResponse{
+		newBalancesMap, err := svc.UpdateDeposit(ctx, claims.UserID, req.Amount, req.Currency)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Intrenal server error"})
+			return
+		}
+
+		getBalance := func(currency string) float64 {
+			if val, ok := newBalancesMap[currency]; ok {
+				return val
+			}
+			return 0.0
+		}
+
+		newBalance := CurrencyBalanceAfterDeposit{
+			USD: getBalance(models.USD),
+			RUB: getBalance(models.RUB),
+			EUR: getBalance(models.EUR),
+		}
+
+		resp := DepositResponse{
 			Message:    "Account topped up successfully",
-			NewBalance: *newBalance,
+			NewBalance: newBalance,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
+		json.NewEncoder(w).Encode(resp)
 	}
 }

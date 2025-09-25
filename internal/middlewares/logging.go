@@ -2,48 +2,49 @@ package middlewares
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
 	"go.uber.org/zap"
 )
 
-// LoggingMiddleware returns a middleware that logs requests and responses using the provided SugaredLogger.
-// It generates a unique request ID for each HTTP request.
-func LoggingMiddleware(log *zap.SugaredLogger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			reqID := uuid.New().String()
-			start := time.Now()
+// LoggingMiddleware logs requests and responses, generating a unique request ID for each request.
+func LoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqID := uuid.New().String()
+		start := time.Now()
 
-			rw := &responseWriter{
-				ResponseWriter: w,
-				statusCode:     http.StatusOK,
-			}
+		rw := &responseWriter{
+			ResponseWriter: w,
+			statusCode:     http.StatusOK,
+		}
 
-			w.Header().Set("X-Request-ID", reqID)
+		w.Header().Set("X-Request-ID", reqID)
 
-			next.ServeHTTP(rw, r)
+		// Call the next handler
+		next.ServeHTTP(rw, r)
 
-			duration := time.Since(start)
+		duration := time.Since(start)
 
-			log.Infow("request",
-				"request_id", reqID,
-				"method", r.Method,
-				"uri", r.RequestURI,
-				"duration", duration,
-			)
+		// Log request
+		logger.Log.Desugar().Info("request",
+			zap.String("request_id", reqID),
+			zap.String("method", r.Method),
+			zap.String("uri", r.RequestURI),
+			zap.Int64("duration_ms", duration.Milliseconds()),
+		)
 
-			log.Infow("response",
-				"request_id", reqID,
-				"status", rw.statusCode,
-				"response_size", strconv.Itoa(rw.size)+"B",
-			)
-		})
-	}
+		// Log response
+		logger.Log.Desugar().Info("response",
+			zap.String("request_id", reqID),
+			zap.Int("status", rw.statusCode),
+			zap.Int("response_size_bytes", rw.size),
+		)
+	})
 }
 
+// responseWriter wraps http.ResponseWriter to capture status code and size
 type responseWriter struct {
 	http.ResponseWriter
 	statusCode int

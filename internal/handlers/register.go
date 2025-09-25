@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"go.uber.org/zap"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/services"
 )
 
 // Registerer defines the interface that the service must implement.
@@ -18,17 +19,17 @@ type Registerer interface {
 type RegisterRequest struct {
 	// Username
 	// required: true
-	// example: john_doe
+	// default: john_doe
 	Username string `json:"username"`
 
 	// Password
 	// required: true
-	// example: secret123
+	// default: secret123
 	Password string `json:"password"`
 
 	// Email
 	// required: true
-	// example: john@example.com
+	// default: john@example.com
 	Email string `json:"email"`
 }
 
@@ -36,7 +37,7 @@ type RegisterRequest struct {
 // swagger:model RegisterResponse
 type RegisterResponse struct {
 	// Success message
-	// example: User registered successfully
+	// default: User registered successfully
 	Message string `json:"message"`
 }
 
@@ -44,7 +45,7 @@ type RegisterResponse struct {
 // swagger:model RegisterErrorResponse
 type RegisterErrorResponse struct {
 	// Error message
-	// example: Username or email already exists
+	// default: Username or email already exists
 	Error string `json:"error"`
 }
 
@@ -58,33 +59,38 @@ type RegisterErrorResponse struct {
 // @Success 201 {object} handlers.RegisterResponse "User successfully registered"
 // @Failure 400 {object} handlers.RegisterErrorResponse "Username or email already exists / invalid request"
 // @Router /register [post]
-func NewRegisterHandler(svc Registerer, log *zap.SugaredLogger) http.HandlerFunc {
+func NewRegisterHandler(svc Registerer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req RegisterRequest
 
-		log.Infow("decoding register request", "method", r.Method, "path", r.URL.Path)
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			log.Errorw("failed to decode request body", "error", err)
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(RegisterErrorResponse{
-				Error: "invalid request body",
+			json.NewEncoder(w).Encode(RegisterErrorResponse{
+				Error: "Username or email already exists",
 			})
 			return
 		}
 
-		log.Infow("calling register service", "username", req.Username, "email", req.Email)
-		if err := svc.Register(r.Context(), req.Username, req.Password, req.Email); err != nil {
-			log.Warnw("registration failed", "username", req.Username, "email", req.Email, "error", err)
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(RegisterErrorResponse{
-				Error: err.Error(),
-			})
+		err := svc.Register(r.Context(), req.Username, req.Password, req.Email)
+		if err != nil {
+			switch err {
+			case services.ErrUserAlreadyExists:
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(RegisterErrorResponse{
+					Error: "Username or email already exists",
+				})
+			default:
+				logger.Log.Errorw("internal server error", "err", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(RegisterErrorResponse{
+					Error: "Internal server error",
+				})
+			}
 			return
 		}
 
-		log.Infow("user registered successfully", "username", req.Username, "email", req.Email)
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(RegisterResponse{
+		json.NewEncoder(w).Encode(RegisterResponse{
 			Message: "User registered successfully",
 		})
 	}

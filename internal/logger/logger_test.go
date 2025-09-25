@@ -4,22 +4,51 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
-func TestNewLogger_ValidLevels(t *testing.T) {
-	levels := []string{"debug", "info", "warn", "error"}
+func TestInitialize_ValidLevels(t *testing.T) {
+	// Save original Log and restore after test
+	originalLog := Log
+	defer func() { Log = originalLog }()
+
+	levels := []string{"debug", "info", "warn", "error", "dpanic", "panic", "fatal"}
 
 	for _, lvl := range levels {
 		t.Run(lvl, func(t *testing.T) {
-			l, err := New(lvl)
-			assert.NoError(t, err, "expected no error for valid level")
-			assert.NotNil(t, l, "logger should not be nil")
+			err := Initialize(lvl)
+			assert.NoError(t, err, "expected no error for level %s", lvl)
+			assert.NotNil(t, Log, "Log should be initialized")
+			assert.IsType(t, &zap.SugaredLogger{}, Log, "Log should be a SugaredLogger")
+
+			// Ensure logging works without panic
+			assert.NotPanics(t, func() {
+				Log.Infow("test log", "level", lvl)
+			})
 		})
 	}
 }
 
-func TestNewLogger_InvalidLevel(t *testing.T) {
-	l, err := New("invalid-level")
-	assert.Error(t, err, "expected error for invalid level")
-	assert.Nil(t, l, "logger should be nil on error")
+func TestInitialize_InvalidLevel(t *testing.T) {
+	// Save original Log and restore after test
+	originalLog := Log
+	defer func() { Log = originalLog }()
+
+	err := Initialize("not-a-level")
+	assert.Error(t, err, "expected error for invalid log level")
+}
+
+func TestLog_NopBeforeInitialize(t *testing.T) {
+	// Save original Log and restore after test
+	originalLog := Log
+	defer func() { Log = originalLog }()
+
+	// By default, Log is zap.NewNop().Sugar()
+	assert.NotNil(t, Log)
+	assert.IsType(t, &zap.SugaredLogger{}, Log)
+
+	// Should not panic even if called
+	assert.NotPanics(t, func() {
+		Log.Infow("nop logger test")
+	})
 }

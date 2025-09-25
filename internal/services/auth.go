@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
+	"github.com/google/uuid"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
-	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -27,88 +27,75 @@ type UserWriter interface {
 	Save(ctx context.Context, username string, password string, email string) error
 }
 
-// AuthService provides methods for user registration and login.
+// JWTGenerator defines an interface for generating JWT tokens.
+type JWTGenerator interface {
+	Generate(ctx context.Context, userID uuid.UUID) (string, error)
+}
+
+// AuthService handles registration and login.
 type AuthService struct {
 	reader UserReader
 	writer UserWriter
-	jwt    *jwt.JWT
-	log    *zap.SugaredLogger
+	jwt    JWTGenerator
 }
 
-// NewAuthService creates a new AuthService with reader, writer, JWT, and logger.
-func NewAuthService(
-	reader UserReader,
-	writer UserWriter,
-	jwt *jwt.JWT,
-	log *zap.SugaredLogger,
-) *AuthService {
+// NewAuthService creates a new AuthService instance.
+func NewAuthService(reader UserReader, writer UserWriter, jwt JWTGenerator) *AuthService {
 	return &AuthService{
 		reader: reader,
 		writer: writer,
 		jwt:    jwt,
-		log:    log,
 	}
 }
 
-// Register registers a new user in the system.
-func (svc *AuthService) Register(
-	ctx context.Context,
-	username, password, email string,
-) error {
-	svc.log.Infow("checking if user exists", "username", username, "email", email)
+// Register registers a new user.
+func (svc *AuthService) Register(ctx context.Context, username, password, email string) error {
 	user, err := svc.reader.GetByUsernameOrEmail(ctx, &username, &email)
-	if err != nil && !errors.Is(err, ErrUserAlreadyExists) {
-		svc.log.Errorw("failed to check if user exists", "error", err)
+	if err != nil {
+		logger.Log.Errorw("failed to check user exists", "err", err)
 		return err
 	}
 	if user != nil {
-		svc.log.Warnw("user already exists", "username", username, "email", email)
+		logger.Log.Errorw("user already exists", "username", username, "email", email)
 		return ErrUserAlreadyExists
 	}
 
-	svc.log.Infow("hashing password for new user", "username", username)
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		svc.log.Errorw("failed to hash password", "error", err)
+		logger.Log.Errorw("failed to hash password", "err", err)
 		return err
 	}
 
-	svc.log.Infow("saving new user to database", "username", username, "email", email)
 	if err := svc.writer.Save(ctx, username, string(hashedPassword), email); err != nil {
-		svc.log.Errorw("failed to save user", "error", err)
+		logger.Log.Errorw("failed to save user", "err", err)
 		return err
 	}
 
-	svc.log.Infow("user registered successfully", "username", username, "email", email)
 	return nil
 }
 
 // Login authenticates a user and returns a JWT token.
 func (svc *AuthService) Login(ctx context.Context, username, password string) (string, error) {
-	svc.log.Infow("retrieving user by username", "username", username)
 	user, err := svc.reader.GetByUsernameOrEmail(ctx, &username, nil)
 	if err != nil {
-		svc.log.Warnw("user not found", "username", username)
+		logger.Log.Errorw("failed to get user", "err", err)
 		return "", err
 	}
-
 	if user == nil {
+		logger.Log.Errorw("user does not exist", "username", username)
 		return "", ErrUserDoesNotExist
 	}
 
-	svc.log.Infow("verifying password for user", "username", username)
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		svc.log.Warnw("invalid password", "username", username)
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		logger.Log.Errorw("invalid credentials", "username", username)
 		return "", ErrInvalidCredentials
 	}
 
-	svc.log.Infow("generating JWT token for user", "username", username, "userID", user.UserID)
 	token, err := svc.jwt.Generate(ctx, user.UserID)
 	if err != nil {
-		svc.log.Errorw("failed to generate JWT token", "error", err)
+		logger.Log.Errorw("failed to generate JWT", "err", err)
 		return "", err
 	}
 
-	svc.log.Infow("login successful", "username", username)
 	return token, nil
 }
