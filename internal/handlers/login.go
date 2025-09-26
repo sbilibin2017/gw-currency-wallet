@@ -61,6 +61,7 @@ func NewLoginHandler(svc Loginer) http.HandlerFunc {
 		var req LoginRequest
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			logger.Log.Errorw("failed to decode login request", "error", err)
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(LoginErrorResponse{
 				Error: "invalid request body",
@@ -72,12 +73,13 @@ func NewLoginHandler(svc Loginer) http.HandlerFunc {
 		if err != nil {
 			switch {
 			case errors.Is(err, services.ErrUserDoesNotExist):
+				logger.Log.Warnw("login failed for user", "username", req.Username, "error", err)
 				w.WriteHeader(http.StatusUnauthorized)
 				json.NewEncoder(w).Encode(LoginErrorResponse{
 					Error: "Invalid username or password",
 				})
 			default:
-				logger.Log.Errorw("internal server error", "err", err)
+				logger.Log.Errorw("internal server error during login", "username", req.Username, "error", err)
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(LoginErrorResponse{
 					Error: "Internal server error",

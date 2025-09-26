@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/services"
 )
 
@@ -97,6 +98,7 @@ func NewWithdrawHandler(
 
 		tokenStr, err := tokenGetter.GetTokenFromRequest(ctx, r)
 		if err != nil {
+			logger.Log.Errorw("failed to get token from request", "error", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(WithdrawErrorResponse{Error: "Unauthorized"})
 			return
@@ -104,6 +106,7 @@ func NewWithdrawHandler(
 
 		claims, err := tokenGetter.GetClaims(ctx, tokenStr)
 		if err != nil {
+			logger.Log.Errorw("failed to get claims from token", "error", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(WithdrawErrorResponse{Error: "Unauthorized"})
 			return
@@ -111,17 +114,20 @@ func NewWithdrawHandler(
 
 		var req WithdrawRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			logger.Log.Errorw("failed to decode withdraw request body", "error", err)
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(WithdrawErrorResponse{Error: "invalid request body"})
 			return
 		}
 
 		if req.Amount <= 0 {
+			logger.Log.Warnw("invalid withdraw amount", "amount", req.Amount, "userID", claims.UserID)
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(WithdrawErrorResponse{Error: "Insufficient funds or invalid amount"})
 			return
 		}
 		if _, ok := validCurrencies[req.Currency]; !ok {
+			logger.Log.Warnw("invalid withdraw currency", "currency", req.Currency, "userID", claims.UserID)
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(WithdrawErrorResponse{Error: "Insufficient funds or invalid amount"})
 			return
@@ -131,9 +137,11 @@ func NewWithdrawHandler(
 		if err != nil {
 			switch err {
 			case services.ErrInsufficientFunds:
+				logger.Log.Warnw("withdraw failed due to insufficient funds", "amount", req.Amount, "currency", req.Currency, "userID", claims.UserID)
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(WithdrawErrorResponse{Error: "Insufficient funds or invalid amount"})
 			default:
+				logger.Log.Errorw("internal server error during withdraw", "error", err, "userID", claims.UserID)
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(WithdrawErrorResponse{Error: "Internal server error"})
 			}

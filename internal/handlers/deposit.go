@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
 )
 
 // DepositTokener defines only the methods needed by this handler.
@@ -96,6 +97,7 @@ func NewDepositHandler(
 
 		tokenStr, err := tokenGetter.GetTokenFromRequest(ctx, r)
 		if err != nil {
+			logger.Log.Errorw("failed to get token from request", "error", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Unauthorized"})
 			return
@@ -103,6 +105,7 @@ func NewDepositHandler(
 
 		claims, err := tokenGetter.GetClaims(ctx, tokenStr)
 		if err != nil {
+			logger.Log.Errorw("failed to get claims from token", "error", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Unauthorized"})
 			return
@@ -110,17 +113,20 @@ func NewDepositHandler(
 
 		var req DepositRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			logger.Log.Errorw("failed to decode deposit request", "error", err)
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Invalid request body"})
 			return
 		}
 
 		if req.Amount <= 0 {
+			logger.Log.Warnw("invalid deposit amount", "amount", req.Amount)
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Invalid amount or currency"})
 			return
 		}
 		if _, ok := validCurrencies[req.Currency]; !ok {
+			logger.Log.Warnw("invalid deposit currency", "currency", req.Currency)
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Invalid amount or currency"})
 			return
@@ -128,6 +134,7 @@ func NewDepositHandler(
 
 		usd, rub, eur, err := svc.Deposit(ctx, claims.UserID, req.Amount, req.Currency)
 		if err != nil {
+			logger.Log.Errorw("failed to deposit funds", "userID", claims.UserID, "amount", req.Amount, "currency", req.Currency, "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Internal server error"})
 			return

@@ -30,18 +30,34 @@ func (r *ExchangeRateCacheRepository) GetExchangeRateForCurrency(ctx context.Con
 
 	val, err := r.client.Get(ctx, key).Result()
 	if err != nil {
+		logger.Log.Infow(
+			"key", key,
+			"result", val,
+			"error", err,
+		)
 		if err == redis.Nil {
 			return 0, fmt.Errorf("exchange rate not found in cache for %s->%s", fromCurrency, toCurrency)
 		}
-		logger.Log.Errorw("failed to get exchange rate from cache", "key", key, "error", err)
 		return 0, err
 	}
 
 	rate, err := strconv.ParseFloat(val, 32)
 	if err != nil {
-		logger.Log.Errorw("invalid cached exchange rate value", "key", key, "value", val, "error", err)
+		logger.Log.Infow(
+			"key", key,
+			"value", val,
+			"result", 0,
+			"error", err,
+		)
 		return 0, err
 	}
+
+	logger.Log.Infow(
+		"key", key,
+		"value", val,
+		"result", rate,
+		"error", nil,
+	)
 
 	return float32(rate), nil
 }
@@ -50,9 +66,13 @@ func (r *ExchangeRateCacheRepository) GetExchangeRateForCurrency(ctx context.Con
 func (r *ExchangeRateCacheRepository) SetExchangeRateForCurrency(ctx context.Context, fromCurrency, toCurrency string, rate float32) error {
 	key := fmt.Sprintf("exchange_rate:%s:%s", fromCurrency, toCurrency)
 	err := r.client.Set(ctx, key, fmt.Sprintf("%f", rate), r.exp).Err()
-	if err != nil {
-		logger.Log.Errorw("failed to set exchange rate in cache", "key", key, "rate", rate, "error", err)
-		return err
-	}
-	return nil
+
+	logger.Log.Infow(
+		"key", key,
+		"rate", rate,
+		"result", "ok",
+		"error", err,
+	)
+
+	return err
 }
