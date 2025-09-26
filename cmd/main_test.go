@@ -7,83 +7,27 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
 	pb "github.com/sbilibin2017/proto-exchange/exchange"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"google.golang.org/grpc"
 )
 
-// resetFlags resets the global flag.CommandLine to avoid "flag redefined" panic
+// ------------------ Helper functions ------------------
+
 func resetFlags() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 }
 
-// resetEnv clears env vars used by parseConfig
 func resetEnv() {
 	os.Clearenv()
 }
 
-func TestParseFlags_Default(t *testing.T) {
-	resetFlags()
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-
-	os.Args = []string{"cmd"}
-	configPath := parseFlags()
-	expected := "config.env"
-
-	if configPath != expected {
-		t.Errorf("expected %s, got %s", expected, configPath)
-	}
-}
-
-func TestParseFlags_Custom(t *testing.T) {
-	resetFlags()
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-
-	os.Args = []string{"cmd", "-c", "myconfig.env"}
-	configPath := parseFlags()
-	expected := "myconfig.env"
-
-	if configPath != expected {
-		t.Errorf("expected %s, got %s", expected, configPath)
-	}
-}
-
-// ----------------- Tests for printBuildInfo -----------------
-
-func TestPrintBuildInfo_Output(t *testing.T) {
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	// Set build info variables
-	buildVersion = "v1.0.0"
-	buildCommit = "abcd1234"
-	buildDate = "2025-09-26"
-
-	printBuildInfo()
-
-	w.Close()
-	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(r)
-	output := buf.String()
-	os.Stdout = oldStdout
-
-	// Check if all expected strings are present
-	if !contains(output, "Version: v1.0.0") ||
-		!contains(output, "Commit: abcd1234") ||
-		!contains(output, "Build: 2025-09-26") {
-		t.Errorf("printBuildInfo output unexpected:\n%s", output)
-	}
-}
-
-// Helper function to check substring
 func contains(s, substr string) bool {
 	return bytes.Contains([]byte(s), []byte(substr))
 }
@@ -96,43 +40,51 @@ func TestParseConfig_Defaults(t *testing.T) {
 		pgMaxOpenConns, pgMaxIdleConns,
 		redisHost, redisPort, redisDB, redisPassword,
 		redisPoolSize, redisMinIdleConns, redisExp,
-		gwHost, gwPort, logLevel,
-		jwtSecret, jwtExp, err := parseConfig("nonexistent.env")
+		gwHost, gwPort,
+		kafkaBrokers, kafkaTopic,
+		logLevel,
+		jwtSecretKey, jwtExpSecond, err := parseConfig("nonexistent.env")
 
 	if err != nil {
 		t.Fatalf("parseConfig returned error: %v", err)
 	}
 
-	// Application
+	// Application defaults
 	if appHost != "localhost" || appPort != "8080" || logLevel != "info" {
 		t.Errorf("unexpected app config: %v/%v/%v", appHost, appPort, logLevel)
 	}
 
-	// PostgreSQL
+	// PostgreSQL defaults
 	if pgHost != "localhost" || pgPort != 5432 || pgUser != "user" || pgPassword != "password" || pgDB != "database" ||
 		pgMaxOpenConns != 16 || pgMaxIdleConns != 8 {
 		t.Errorf("unexpected postgres config")
 	}
 
-	// Redis
+	// Redis defaults
 	if redisHost != "localhost" || redisPort != 6379 || redisDB != 0 || redisPassword != "" ||
 		redisPoolSize != 10 || redisMinIdleConns != 2 || redisExp != 60 {
 		t.Errorf("unexpected redis config")
 	}
 
-	// gRPC
+	// gRPC defaults
 	if gwHost != "localhost" || gwPort != "50051" {
 		t.Errorf("unexpected grpc config")
 	}
 
-	// JWT
-	if jwtSecret != "my_super_secret_key" || jwtExp != 60 {
+	// Kafka defaults
+	if !reflect.DeepEqual(kafkaBrokers, []string{"localhost:9092"}) || kafkaTopic != "large-transactions" {
+		t.Errorf("unexpected kafka config: %v/%v", kafkaBrokers, kafkaTopic)
+	}
+
+	// JWT defaults
+	if jwtSecretKey != "my_super_secret_key" || jwtExpSecond != 60 {
 		t.Errorf("unexpected jwt config")
 	}
 }
 
 func TestParseConfig_CustomEnv(t *testing.T) {
 	resetEnv()
+
 	os.Setenv("APP_HOST", "127.0.0.1")
 	os.Setenv("APP_PORT", "9090")
 	os.Setenv("APP_LOG_LEVEL", "debug")
@@ -156,6 +108,9 @@ func TestParseConfig_CustomEnv(t *testing.T) {
 	os.Setenv("GW_EXCHANGER_HOST", "grpc.example.com")
 	os.Setenv("GW_EXCHANGER_PORT", "50052")
 
+	os.Setenv("KAFKA_BROKERS", "broker1:9092,broker2:9093")
+	os.Setenv("KAFKA_TOPIC", "custom-topic")
+
 	os.Setenv("JWT_SECRET_KEY", "supersecret")
 	os.Setenv("JWT_EXP_SECOND", "300")
 
@@ -164,45 +119,53 @@ func TestParseConfig_CustomEnv(t *testing.T) {
 		pgMaxOpenConns, pgMaxIdleConns,
 		redisHost, redisPort, redisDB, redisPassword,
 		redisPoolSize, redisMinIdleConns, redisExp,
-		gwHost, gwPort, logLevel,
-		jwtSecret, jwtExp, err := parseConfig("nonexistent.env")
+		gwHost, gwPort,
+		kafkaBrokers, kafkaTopic,
+		logLevel,
+		jwtSecretKey, jwtExpSecond, err := parseConfig("nonexistent.env")
 
 	if err != nil {
 		t.Fatalf("parseConfig returned error: %v", err)
 	}
 
-	// Check all variables
+	// Assertions
 	if appHost != "127.0.0.1" || appPort != "9090" || logLevel != "debug" {
 		t.Errorf("unexpected app config")
 	}
+
 	if pgHost != "pg.example.com" || pgPort != 5433 || pgUser != "admin" || pgPassword != "secret" || pgDB != "mydb" ||
 		pgMaxOpenConns != 20 || pgMaxIdleConns != 10 {
 		t.Errorf("unexpected postgres config")
 	}
+
 	if redisHost != "redis.example.com" || redisPort != 6380 || redisDB != 2 || redisPassword != "redispass" ||
 		redisPoolSize != 15 || redisMinIdleConns != 5 || redisExp != 120 {
 		t.Errorf("unexpected redis config")
 	}
+
 	if gwHost != "grpc.example.com" || gwPort != "50052" {
 		t.Errorf("unexpected grpc config")
 	}
-	if jwtSecret != "supersecret" || jwtExp != 300 {
+
+	expectedBrokers := []string{"broker1:9092", "broker2:9093"}
+	if !reflect.DeepEqual(kafkaBrokers, expectedBrokers) || kafkaTopic != "custom-topic" {
+		t.Errorf("unexpected kafka config: %v/%v", kafkaBrokers, kafkaTopic)
+	}
+
+	if jwtSecretKey != "supersecret" || jwtExpSecond != 300 {
 		t.Errorf("unexpected jwt config")
 	}
 }
 
 // ------------------ Mock gRPC Server ------------------
+
 type mockExchangeServer struct {
 	pb.UnimplementedExchangeServiceServer
 }
 
 func (m *mockExchangeServer) GetExchangeRates(ctx context.Context, _ *pb.Empty) (*pb.ExchangeRatesResponse, error) {
 	return &pb.ExchangeRatesResponse{
-		Rates: map[string]float32{
-			"USD": 1.0,
-			"EUR": 0.9,
-			"JPY": 110.0,
-		},
+		Rates: map[string]float32{"USD": 1.0, "EUR": 0.9, "JPY": 110.0},
 	}, nil
 }
 
@@ -214,40 +177,86 @@ func (m *mockExchangeServer) GetExchangeRateForCurrency(ctx context.Context, req
 	case "JPY":
 		rate = 110.0
 	}
-	return &pb.ExchangeRateResponse{
-		FromCurrency: req.FromCurrency,
-		ToCurrency:   req.ToCurrency,
-		Rate:         rate,
-	}, nil
+	return &pb.ExchangeRateResponse{FromCurrency: req.FromCurrency, ToCurrency: req.ToCurrency, Rate: rate}, nil
 }
 
-// Start mock gRPC server and return host:port and stop function
-func startMockGRPCServer() (addr string, stop func(), err error) {
-	lis, err := net.Listen("tcp", "127.0.0.1:0") // OS assigns a free port
+func startMockGRPCServer(t *testing.T) (addr string, stop func()) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return "", nil, err
+		t.Fatal(err)
 	}
 	s := grpc.NewServer()
 	pb.RegisterExchangeServiceServer(s, &mockExchangeServer{})
 	go s.Serve(lis)
 
-	stop = func() {
+	return lis.Addr().String(), func() {
 		s.Stop()
 		lis.Close()
 	}
-	return lis.Addr().String(), stop, nil
 }
 
-// ------------------ Full integration test ------------------
-func TestRun_Success(t *testing.T) {
-	ctx := context.Background()
+// ------------------ Unit tests ------------------
 
-	// ------------------ Postgres container ------------------
+func TestParseFlags_Default(t *testing.T) {
+	resetFlags()
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	os.Args = []string{"cmd"}
+	configPath := parseFlags()
+	if configPath != "config.env" {
+		t.Errorf("expected config.env, got %s", configPath)
+	}
+}
+
+func TestParseFlags_Custom(t *testing.T) {
+	resetFlags()
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	os.Args = []string{"cmd", "-c", "myconfig.env"}
+	configPath := parseFlags()
+	if configPath != "myconfig.env" {
+		t.Errorf("expected myconfig.env, got %s", configPath)
+	}
+}
+
+func TestPrintBuildInfo_Output(t *testing.T) {
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	buildVersion = "v1.0.0"
+	buildCommit = "abcd1234"
+	buildDate = "2025-09-26"
+
+	printBuildInfo()
+	w.Close()
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	os.Stdout = oldStdout
+
+	output := buf.String()
+	if !contains(output, "Version: v1.0.0") ||
+		!contains(output, "Commit: abcd1234") ||
+		!contains(output, "Build: 2025-09-26") {
+		t.Errorf("printBuildInfo output unexpected:\n%s", output)
+	}
+}
+
+// ------------------ Full Integration Test ------------------
+
+func TestRun_FullIntegration(t *testing.T) {
+	ctx := context.Background()
+	logger.Initialize("debug")
+
+	// ------------------ PostgreSQL ------------------
 	pgReq := testcontainers.ContainerRequest{
 		Image:        "postgres:15",
 		Env:          map[string]string{"POSTGRES_PASSWORD": "password", "POSTGRES_DB": "testdb", "POSTGRES_USER": "user"},
 		ExposedPorts: []string{"5432/tcp"},
-		WaitingFor:   wait.ForListeningPort("5432/tcp"),
+		WaitingFor:   wait.ForListeningPort("5432/tcp").WithStartupTimeout(60 * time.Second),
 	}
 	pgContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{ContainerRequest: pgReq, Started: true})
 	if err != nil {
@@ -256,13 +265,14 @@ func TestRun_Success(t *testing.T) {
 	defer pgContainer.Terminate(ctx)
 
 	pgHost, _ := pgContainer.Host(ctx)
-	pgPort, _ := pgContainer.MappedPort(ctx, "5432")
+	pgPortNat, _ := pgContainer.MappedPort(ctx, "5432")
+	pgPort := pgPortNat.Int()
 
-	// ------------------ Redis container ------------------
+	// ------------------ Redis ------------------
 	redisReq := testcontainers.ContainerRequest{
 		Image:        "redis:7",
 		ExposedPorts: []string{"6379/tcp"},
-		WaitingFor:   wait.ForListeningPort("6379/tcp"),
+		WaitingFor:   wait.ForListeningPort("6379/tcp").WithStartupTimeout(30 * time.Second),
 	}
 	redisContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{ContainerRequest: redisReq, Started: true})
 	if err != nil {
@@ -271,43 +281,44 @@ func TestRun_Success(t *testing.T) {
 	defer redisContainer.Terminate(ctx)
 
 	redisHost, _ := redisContainer.Host(ctx)
-	redisPort, _ := redisContainer.MappedPort(ctx, "6379")
+	redisPortNat, _ := redisContainer.MappedPort(ctx, "6379")
+	redisPort := redisPortNat.Int()
 
-	// ------------------ Mock gRPC server ------------------
-	grpcAddr, stopGRPC, err := startMockGRPCServer()
-	if err != nil {
-		t.Fatal(err)
-	}
+	// ------------------ Mock gRPC ------------------
+	grpcAddr, stopGRPC := startMockGRPCServer(t)
 	defer stopGRPC()
-
-	// Split host and port
 	var grpcHost, grpcPort string
 	fmt.Sscanf(grpcAddr, "%s:%s", &grpcHost, &grpcPort)
 
-	// ------------------ Run ------------------
-	testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	// ------------------ Run Application ------------------
+	runCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	errCh := make(chan error, 1)
+	done := make(chan error, 1)
 	go func() {
-		errCh <- run(testCtx,
-			"127.0.0.1", "8086", // appHost, appPort
-			pgHost, pgPort.Int(), "user", "password", "testdb",
+		done <- run(runCtx,
+			"127.0.0.1", "8086", // HTTP
+			pgHost, pgPort, "user", "password", "testdb",
 			5, 2, // Postgres max connections
-			redisHost, redisPort.Int(), 0, "", 10, 2, 60, // Redis
+			redisHost, redisPort, 0, "", 10, 2, 60, // Redis
 			grpcHost, grpcPort, // gRPC
-			"debug",          // logLevel
-			"testsecret", 60, // JWT
+			[]string{"localhost:9092"}, "large-transactions", // Kafka (not tested)
+			"debug",
+			"testsecret", 60,
 		)
 	}()
 
+	// Wait a few seconds to let the server start
+	time.Sleep(5 * time.Second)
+
+	// ------------------ Shutdown ------------------
+	cancel()
 	select {
-	case <-time.After(11 * time.Second):
-		t.Fatal("test timed out")
-	case err := <-errCh:
+	case err := <-done:
 		if err != nil {
-			t.Fatalf("expected run to succeed, got error: %v", err)
+			t.Fatalf("run() returned error: %v", err)
 		}
-		t.Log("run completed successfully")
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for app shutdown")
 	}
 }

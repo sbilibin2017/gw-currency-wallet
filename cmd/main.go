@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,16 +18,15 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+	"github.com/segmentio/kafka-go"
 
 	"github.com/sbilibin2017/gw-currency-wallet/internal/facades"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/handlers"
-
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/middlewares"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/repositories"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/services"
-
-	"github.com/sbilibin2017/gw-currency-wallet/internal/middlewares"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	pb "github.com/sbilibin2017/proto-exchange/exchange"
@@ -35,23 +35,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// Build info variables
-var (
-	buildVersion = "N/A"
-	buildDate    = "N/A"
-	buildCommit  = "N/A"
-)
-
-// Package main gw-currency-wallet API.
-// @title gw-currency-wallet API
-// @version 1.0.0
-// @description Microservice for managing user wallets and currency exchange
-// @host localhost:8080
-// @BasePath /api/v1
-// @schemes http
-// @securityDefinitions.apikey BearerAuth
-// @in header
-// @name Authorization
 func main() {
 	printBuildInfo()
 	configPath := parseFlags()
@@ -60,7 +43,7 @@ func main() {
 		pgMaxOpenConns, pgMaxIdleConns,
 		redisHost, redisPort, redisDB, redisPassword,
 		redisPoolSize, redisMinIdleConns, redisExp,
-		gwHost, gwPort, logLevel,
+		gwHost, gwPort, kafkaBrokers, kafkaTopic, logLevel,
 		jwtSecret, jwtExp,
 		err := parseConfig(configPath)
 	if err != nil {
@@ -74,12 +57,20 @@ func main() {
 		redisHost, redisPort, redisDB, redisPassword,
 		redisPoolSize, redisMinIdleConns, redisExp,
 		gwHost, gwPort,
+		kafkaBrokers, kafkaTopic,
 		logLevel,
 		jwtSecret, jwtExp,
 	); err != nil {
 		log.Fatalf("application stopped with error: %v", err)
 	}
 }
+
+// Build info variables
+var (
+	buildVersion = "N/A"
+	buildDate    = "N/A"
+	buildCommit  = "N/A"
+)
 
 func printBuildInfo() {
 	fmt.Printf("Version: %s\n", buildVersion)
@@ -93,14 +84,16 @@ func parseFlags() string {
 	return *c
 }
 
-// parseConfig loads env and returns all configs including redisExp
+// parseConfig loads env and returns all configs including Kafka
 func parseConfig(path string) (
 	appHost, appPort string,
 	pgHost string, pgPort int, pgUser, pgPassword, pgDB string,
 	pgMaxOpenConns, pgMaxIdleConns int,
 	redisHost string, redisPort, redisDB int, redisPassword string,
 	redisPoolSize, redisMinIdleConns, redisExp int,
-	gwHost, gwPort, logLevel string,
+	gwHost, gwPort string,
+	kafkaBrokers []string, kafkaTopic string,
+	logLevel string,
 	jwtSecretKey string, jwtExpSecond int,
 	err error,
 ) {
@@ -156,6 +149,17 @@ func parseConfig(path string) (
 	gwHost = getEnv("GW_EXCHANGER_HOST", "localhost")
 	gwPort = getEnv("GW_EXCHANGER_PORT", "50051")
 
+	// Kafka
+	brokersStr := getEnv("KAFKA_BROKERS", "localhost:9092")
+	kafkaBrokers = []string{}
+	for _, b := range strings.Split(brokersStr, ",") {
+		b = strings.TrimSpace(b)
+		if b != "" {
+			kafkaBrokers = append(kafkaBrokers, b)
+		}
+	}
+	kafkaTopic = getEnv("KAFKA_TOPIC", "large-transactions")
+
 	// JWT
 	jwtSecretKey = getEnv("JWT_SECRET_KEY", "my_super_secret_key")
 	if jwtExpSecond, err = strconv.Atoi(getEnv("JWT_EXP_SECOND", "60")); err != nil {
@@ -165,15 +169,15 @@ func parseConfig(path string) (
 	return
 }
 
-// run initializes logger, DB, Redis, gRPC, JWT, services, handlers, router and handles shutdown
-// run initializes logger, DB, Redis, gRPC, JWT, services, handlers, router, and handles graceful shutdown.
 func run(ctx context.Context,
 	appHost, appPort string,
 	pgHost string, pgPort int, pgUser, pgPassword, pgDB string,
 	pgMaxOpenConns, pgMaxIdleConns int,
 	redisHost string, redisPort, redisDB int, redisPassword string,
 	redisPoolSize, redisMinIdleConns, redisExp int,
-	gwHost, gwPort, logLevel string,
+	gwHost, gwPort string,
+	kafkaBrokers []string, kafkaTopic string,
+	logLevel string,
 	jwtSecretKey string, jwtExpSecond int,
 ) error {
 
@@ -217,7 +221,7 @@ func run(ctx context.Context,
 
 	// gRPC client
 	grpcAddr := fmt.Sprintf("%s:%s", gwHost, gwPort)
-	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		logger.Log.Error("Failed to connect to gRPC service at", grpcAddr, ":", err)
 		return err
@@ -239,9 +243,17 @@ func run(ctx context.Context,
 	exchangeRateCacheRepo := repositories.NewExchangeRateCacheRepository(rdb, time.Duration(redisExp)*time.Second)
 	exchangeGRPCFacade := facades.NewExchangeRatesGRPCFacade(exchangeGRPCClient)
 
+	// Kafka Writer
+	kafkaWriter := kafka.NewWriter(kafka.WriterConfig{
+		Brokers:  kafkaBrokers,
+		Topic:    kafkaTopic,
+		Balancer: &kafka.LeastBytes{},
+	})
+	defer kafkaWriter.Close()
+
 	// Services
 	authService := services.NewAuthService(userReadRepo, userWriteRepo, jwtService)
-	walletService := services.NewWalletService(walletWriterRepo, walletReaderRepo, exchangeGRPCFacade, exchangeRateCacheRepo)
+	walletService := services.NewWalletService(walletWriterRepo, walletReaderRepo, exchangeGRPCFacade, exchangeRateCacheRepo, kafkaWriter)
 
 	// Handlers
 	registerHandler := handlers.NewRegisterHandler(authService)
