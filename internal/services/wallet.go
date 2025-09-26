@@ -17,9 +17,6 @@ var (
 	ErrInsufficientFunds = errors.New("insufficient funds")
 )
 
-// Threshold для больших транзакций
-const largeAmountThreshold = 30000
-
 // WalletWriter определяет методы записи для депозитов и снятий.
 type WalletWriter interface {
 	SaveDeposit(ctx context.Context, userID uuid.UUID, amount float64, currency string) error
@@ -90,10 +87,6 @@ func NewWalletService(
 func (s *WalletService) publishTransaction(ctx context.Context, txn Transaction) {
 	if s.kafkaWriter == nil {
 		logger.Log.Warnw("Kafka writer not configured, skipping publishing", "transaction_id", txn.TransactionID)
-		return
-	}
-
-	if txn.Amount < largeAmountThreshold {
 		return
 	}
 

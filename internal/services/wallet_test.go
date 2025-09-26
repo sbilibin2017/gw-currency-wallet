@@ -22,7 +22,7 @@ func TestWalletService_Deposit(t *testing.T) {
 	reader := NewMockWalletReader(ctrl)
 	kafka := NewMockKafkaWriter(ctrl)
 
-	// успешный депозит больше порога (публикация в Kafka)
+	// Успешный депозит
 	writer.EXPECT().SaveDeposit(ctx, userID, 50000.0, models.USD).Return(nil)
 	reader.EXPECT().GetByUserID(ctx, userID).Return(map[string]float64{
 		models.USD: 50000,
@@ -51,13 +51,14 @@ func TestWalletService_Withdraw(t *testing.T) {
 	reader := NewMockWalletReader(ctrl)
 	kafka := NewMockKafkaWriter(ctrl)
 
-	// успешное снятие меньше порога (не публикуем в Kafka)
+	// Успешное снятие
 	writer.EXPECT().SaveWithdraw(ctx, userID, 1000.0, models.USD).Return(nil)
 	reader.EXPECT().GetByUserID(ctx, userID).Return(map[string]float64{
 		models.USD: 4000,
 		models.RUB: 0,
 		models.EUR: 0,
 	}, nil)
+	kafka.EXPECT().WriteMessages(gomock.Any(), gomock.Any()).Return(nil)
 
 	svc := NewWalletService(writer, reader, nil, nil, kafka)
 	usd, rub, eur, err := svc.Withdraw(ctx, userID, 1000, models.USD)
@@ -120,7 +121,7 @@ func TestWalletService_publishTransaction(t *testing.T) {
 	ctx := context.Background()
 	txn := Transaction{
 		TransactionID: "txn-123",
-		Amount:        50000, // выше порога
+		Amount:        1000,
 		Sender:        "user-1",
 		Receiver:      "deposit",
 	}
@@ -128,23 +129,19 @@ func TestWalletService_publishTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	// Kafka writer nil
-	svc := &WalletService{}
-	svc.publishTransaction(ctx, txn) // не должно паниковать
-
-	// Transaction ниже порога
 	mockKafka := NewMockKafkaWriter(ctrl)
-	svc = &WalletService{kafkaWriter: mockKafka}
-	txn.Amount = 1000
-	svc.publishTransaction(ctx, txn) // WriteMessages не вызывается
+	svc := &WalletService{kafkaWriter: mockKafka}
 
-	// Успешная публикация
+	// Проверяем успешный вызов
 	mockKafka.EXPECT().WriteMessages(ctx, gomock.Any()).Return(nil).Times(1)
-	txn.Amount = 50000
 	svc.publishTransaction(ctx, txn)
 
-	// Ошибка публикации
+	// Проверяем ошибку публикации
 	mockKafka.EXPECT().WriteMessages(ctx, gomock.Any()).Return(errors.New("kafka error")).Times(1)
+	svc.publishTransaction(ctx, txn)
+
+	// Проверяем nil KafkaWriter — не должно паниковать
+	svc = &WalletService{}
 	svc.publishTransaction(ctx, txn)
 }
 
@@ -281,4 +278,42 @@ func TestWalletService_GetExchangeRates(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWalletService_Exchange(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWrite := NewMockWalletWriter(ctrl)
+	mockRead := NewMockWalletReader(ctrl)
+	mockRate := NewMockExchangeRateReader(ctrl)
+	mockCache := NewMockExchangeRateCacheReader(ctrl)
+
+	// Настройка кеша и курса
+	mockCache.EXPECT().GetExchangeRateForCurrency(ctx, "USD", "EUR").Return(float32(0), errors.New("cache miss"))
+	mockRate.EXPECT().GetExchangeRateForCurrency(ctx, "USD", "EUR").Return(float32(0.9), nil)
+	mockCache.EXPECT().SetExchangeRateForCurrency(ctx, "USD", "EUR", float32(0.9)).Return(nil)
+
+	// Списание и зачисление
+	mockWrite.EXPECT().SaveWithdraw(ctx, userID, 100.0, "USD").Return(nil)
+	mockWrite.EXPECT().SaveDeposit(ctx, userID, float64(90.0), "EUR").Return(nil)
+
+	// Получение баланса
+	mockRead.EXPECT().GetByUserID(ctx, userID).Return(map[string]float64{
+		models.USD: 900,
+		models.RUB: 0,
+		models.EUR: 90,
+	}, nil)
+
+	svc := NewWalletService(mockWrite, mockRead, mockRate, mockCache, nil)
+	exchanged, usd, rub, eur, err := svc.Exchange(ctx, userID, "USD", "EUR", 100)
+
+	assert.NoError(t, err)
+	assert.Equal(t, float32(90.0), exchanged)
+	assert.Equal(t, 900.0, usd)
+	assert.Equal(t, 0.0, rub)
+	assert.Equal(t, 90.0, eur)
 }
