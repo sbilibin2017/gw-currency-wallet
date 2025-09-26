@@ -1,120 +1,124 @@
-package handlers_test
+package handlers
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
-	"github.com/sbilibin2017/gw-currency-wallet/internal/handlers"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
-	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGetExchangeRatesHandler(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockToken := handlers.NewMockExchangeRatesTokener(ctrl)
-	mockReader := handlers.NewMockExchangeRatesReader(ctrl)
-
-	handler := handlers.NewGetExchangeRatesHandler(mockReader, mockToken)
+	userID := uuid.New()
+	validToken := "valid-token"
 
 	tests := []struct {
-		name      string
-		mockSetup func()
-		wantCode  int
-		wantBody  interface{}
+		name               string
+		setupMocks         func(*MockExchangeRatesReader, *MockExchangeRatesTokener)
+		expectedStatusCode int
+		expectedResponse   interface{}
 	}{
 		{
 			name: "success",
-			mockSetup: func() {
-				mockToken.EXPECT().
+			setupMocks: func(reader *MockExchangeRatesReader, tokener *MockExchangeRatesTokener) {
+				tokener.EXPECT().
 					GetTokenFromRequest(gomock.Any(), gomock.Any()).
-					Return("token", nil)
-				mockToken.EXPECT().
-					GetClaims(gomock.Any(), "token").
-					Return(&jwt.Claims{UserID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")}, nil)
-				mockReader.EXPECT().
+					Return(validToken, nil)
+				tokener.EXPECT().
+					GetClaims(gomock.Any(), validToken).
+					Return(&jwt.Claims{UserID: userID}, nil)
+				reader.EXPECT().
 					GetExchangeRates(gomock.Any()).
-					Return(map[string]float32{
-						models.USD: 1.0,
-						models.RUB: 90.0,
-						models.EUR: 0.85,
-					}, nil)
+					Return(float32(1.0), float32(90.0), float32(0.85), nil)
 			},
-			wantCode: http.StatusOK,
-			wantBody: map[string]interface{}{
-				"rates": map[string]interface{}{
-					"USD": float64(1.0),
-					"RUB": float64(90.0),
-					"EUR": float64(0.85),
+			expectedStatusCode: http.StatusOK,
+			expectedResponse: ExchangeRatesResponse{
+				Rates: ExchangeRates{
+					USD: 1.0,
+					RUB: 90.0,
+					EUR: 0.85,
 				},
 			},
 		},
 		{
-			name: "unauthorized_no_token",
-			mockSetup: func() {
-				mockToken.EXPECT().
+			name: "unauthorized_token_error",
+			setupMocks: func(reader *MockExchangeRatesReader, tokener *MockExchangeRatesTokener) {
+				tokener.EXPECT().
 					GetTokenFromRequest(gomock.Any(), gomock.Any()).
-					Return("", context.Canceled) // simulate error getting token
+					Return("", errors.New("no token"))
 			},
-			wantCode: http.StatusUnauthorized,
-			wantBody: map[string]interface{}{"error": "Unauthorized"},
+			expectedStatusCode: http.StatusUnauthorized,
+			expectedResponse:   ExchangeRatesErrorResponse{Error: "Unauthorized"},
 		},
 		{
-			name: "unauthorized_invalid_token",
-			mockSetup: func() {
-				mockToken.EXPECT().
+			name: "unauthorized_claims_error",
+			setupMocks: func(reader *MockExchangeRatesReader, tokener *MockExchangeRatesTokener) {
+				tokener.EXPECT().
 					GetTokenFromRequest(gomock.Any(), gomock.Any()).
-					Return("token", nil)
-				mockToken.EXPECT().
-					GetClaims(gomock.Any(), "token").
-					Return(nil, context.Canceled)
+					Return(validToken, nil)
+				tokener.EXPECT().
+					GetClaims(gomock.Any(), validToken).
+					Return(nil, errors.New("invalid claims"))
 			},
-			wantCode: http.StatusUnauthorized,
-			wantBody: map[string]interface{}{"error": "Unauthorized"},
+			expectedStatusCode: http.StatusUnauthorized,
+			expectedResponse:   ExchangeRatesErrorResponse{Error: "Unauthorized"},
 		},
 		{
-			name: "internal_error_on_reader",
-			mockSetup: func() {
-				mockToken.EXPECT().
+			name: "internal_server_error",
+			setupMocks: func(reader *MockExchangeRatesReader, tokener *MockExchangeRatesTokener) {
+				tokener.EXPECT().
 					GetTokenFromRequest(gomock.Any(), gomock.Any()).
-					Return("token", nil)
-				mockToken.EXPECT().
-					GetClaims(gomock.Any(), "token").
-					Return(&jwt.Claims{UserID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")}, nil)
-				mockReader.EXPECT().
+					Return(validToken, nil)
+				tokener.EXPECT().
+					GetClaims(gomock.Any(), validToken).
+					Return(&jwt.Claims{UserID: userID}, nil)
+				reader.EXPECT().
 					GetExchangeRates(gomock.Any()).
-					Return(nil, context.Canceled)
+					Return(float32(0), float32(0), float32(0), errors.New("db error"))
 			},
-			wantCode: http.StatusInternalServerError,
-			wantBody: map[string]interface{}{"error": "Failed to retrieve exchange rates"},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedResponse:   ExchangeRatesErrorResponse{Error: "Failed to retrieve exchange rates"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.mockSetup()
+			mockReader := NewMockExchangeRatesReader(ctrl)
+			mockTokener := NewMockExchangeRatesTokener(ctrl)
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(mockReader, mockTokener)
+			}
+
+			handler := NewGetExchangeRatesHandler(mockReader, mockTokener)
 
 			req := httptest.NewRequest(http.MethodGet, "/exchange/rates", nil)
-			w := httptest.NewRecorder()
+			rec := httptest.NewRecorder()
 
-			handler(w, req)
+			handler.ServeHTTP(rec, req)
 
-			res := w.Result()
-			defer res.Body.Close()
+			assert.Equal(t, tt.expectedStatusCode, rec.Code)
 
-			require.Equal(t, tt.wantCode, res.StatusCode)
-
-			var body map[string]interface{}
-			err := json.NewDecoder(res.Body).Decode(&body)
-			require.NoError(t, err)
-			require.Equal(t, tt.wantBody, body)
+			if rec.Code == http.StatusOK {
+				var got ExchangeRatesResponse
+				err := json.NewDecoder(rec.Body).Decode(&got)
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedResponse, got)
+			} else {
+				var got ExchangeRatesErrorResponse
+				err := json.NewDecoder(rec.Body).Decode(&got)
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedResponse, got)
+			}
 		})
 	}
 }

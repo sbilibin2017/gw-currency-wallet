@@ -101,14 +101,12 @@ func TestSaveDeposit(t *testing.T) {
 
 	writer := NewWalletWriterRepository(db, nil)
 
-	balance, err := writer.SaveDeposit(ctx, userID, 100, "USD")
+	err = writer.SaveDeposit(ctx, userID, 100, "USD")
 	assert.NoError(t, err)
-	assert.Equal(t, 100.0, balance)
 	assert.Equal(t, 100.0, getBalance(t, db, userID, "USD"))
 
-	balance, err = writer.SaveDeposit(ctx, userID, 50, "USD")
+	err = writer.SaveDeposit(ctx, userID, 50, "USD")
 	assert.NoError(t, err)
-	assert.Equal(t, 150.0, balance)
 	assert.Equal(t, 150.0, getBalance(t, db, userID, "USD"))
 }
 
@@ -126,20 +124,18 @@ func TestSaveWithdraw(t *testing.T) {
 	writer := NewWalletWriterRepository(db, nil)
 
 	// Deposit first
-	_, err = writer.SaveDeposit(ctx, userID, 200, "USD")
+	err = writer.SaveDeposit(ctx, userID, 200, "USD")
 	assert.NoError(t, err)
 
-	balance, err := writer.SaveWithdraw(ctx, userID, 80, "USD")
+	err = writer.SaveWithdraw(ctx, userID, 80, "USD")
 	assert.NoError(t, err)
-	assert.Equal(t, 120.0, balance)
 	assert.Equal(t, 120.0, getBalance(t, db, userID, "USD"))
 
-	balance, err = writer.SaveWithdraw(ctx, userID, 50, "USD")
+	err = writer.SaveWithdraw(ctx, userID, 50, "USD")
 	assert.NoError(t, err)
-	assert.Equal(t, 70.0, balance)
 	assert.Equal(t, 70.0, getBalance(t, db, userID, "USD"))
 
-	_, err = writer.SaveWithdraw(ctx, userID, 100, "USD")
+	err = writer.SaveWithdraw(ctx, userID, 100, "USD")
 	assert.ErrorIs(t, err, sql.ErrNoRows)
 	assert.Equal(t, 70.0, getBalance(t, db, userID, "USD"))
 }
@@ -164,7 +160,10 @@ func TestSaveDepositConcurrency(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func() {
 			defer wg.Done()
-			_, _ = writer.SaveDeposit(ctx, userID, amount, "USD")
+			err := writer.SaveDeposit(ctx, userID, amount, "USD")
+			if err != nil {
+				t.Errorf("SaveDeposit failed: %v", err)
+			}
 		}()
 	}
 	wg.Wait()
@@ -185,7 +184,7 @@ func TestSaveWithdrawConcurrency(t *testing.T) {
 	writer := NewWalletWriterRepository(db, nil)
 
 	// Deposit first
-	_, err := writer.SaveDeposit(ctx, userID, initial, "USD")
+	err := writer.SaveDeposit(ctx, userID, initial, "USD")
 	assert.NoError(t, err)
 
 	const numGoroutines = 1000
@@ -196,7 +195,10 @@ func TestSaveWithdrawConcurrency(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func() {
 			defer wg.Done()
-			_, _ = writer.SaveWithdraw(ctx, userID, amount, "USD")
+			err := writer.SaveWithdraw(ctx, userID, amount, "USD")
+			if err != nil && err != sql.ErrNoRows {
+				t.Errorf("SaveWithdraw failed: %v", err)
+			}
 		}()
 	}
 	wg.Wait()

@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
-	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/services"
 )
 
@@ -21,12 +20,7 @@ type ExchangeRateForCurrencyTokener interface {
 
 // Exchanger
 type Exchanger interface {
-	Exchange(
-		ctx context.Context,
-		userID uuid.UUID,
-		fromCurrency, toCurrency string,
-		amount float64,
-	) (exchangedAmount float32, newBalance map[string]float64, err error)
+	Exchange(ctx context.Context, userID uuid.UUID, fromCurrency, toCurrency string, amount float64) (exchangedAmount float32, usd, rub, eur float64, err error)
 }
 
 // ExchangeRequest represents the JSON body for currency exchange
@@ -128,7 +122,7 @@ func NewExchangeHandler(
 			return
 		}
 
-		exchangedAmount, balancesMap, err := exchanger.Exchange(ctx, userID, req.FromCurrency, req.ToCurrency, req.Amount)
+		exchangedAmount, usd, rub, eur, err := exchanger.Exchange(ctx, userID, req.FromCurrency, req.ToCurrency, req.Amount)
 		if err != nil {
 			switch {
 			case errors.Is(err, services.ErrInsufficientFunds):
@@ -142,9 +136,9 @@ func NewExchangeHandler(
 		}
 
 		newBalance := ExchangedBalance{
-			USD: balancesMap[models.USD],
-			RUB: balancesMap[models.RUB],
-			EUR: balancesMap[models.EUR],
+			USD: usd,
+			RUB: rub,
+			EUR: eur,
 		}
 
 		resp := ExchangeResponse{

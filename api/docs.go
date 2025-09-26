@@ -34,13 +34,19 @@ const docTemplate = `{
                     "200": {
                         "description": "User balance",
                         "schema": {
-                            "$ref": "#/definitions/models.BalanceResponse"
+                            "$ref": "#/definitions/handlers.BalanceResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/models.BalanceErrorResponse"
+                            "$ref": "#/definitions/handlers.BalanceErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.BalanceErrorResponse"
                         }
                     }
                 }
@@ -71,7 +77,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.ExchangeRequest"
+                            "$ref": "#/definitions/handlers.ExchangeRequest"
                         }
                     }
                 ],
@@ -79,19 +85,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Exchange successful",
                         "schema": {
-                            "$ref": "#/definitions/models.ExchangeResponse"
+                            "$ref": "#/definitions/handlers.ExchangeResponse"
                         }
                     },
                     "400": {
                         "description": "Insufficient funds or invalid currencies",
                         "schema": {
-                            "$ref": "#/definitions/models.ExchangeErrorResponse"
+                            "$ref": "#/definitions/handlers.ExchangeErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/models.ExchangeErrorResponse"
+                            "$ref": "#/definitions/handlers.ExchangeErrorResponse"
                         }
                     }
                 }
@@ -116,19 +122,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Exchange rates",
                         "schema": {
-                            "$ref": "#/definitions/models.ExchangeRatesResponse"
+                            "$ref": "#/definitions/handlers.ExchangeRatesResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/models.ExchangeRatesErrorResponse"
+                            "$ref": "#/definitions/handlers.ExchangeRatesErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to retrieve exchange rates",
                         "schema": {
-                            "$ref": "#/definitions/models.ExchangeRatesErrorResponse"
+                            "$ref": "#/definitions/handlers.ExchangeRatesErrorResponse"
                         }
                     }
                 }
@@ -245,7 +251,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.DepositRequest"
+                            "$ref": "#/definitions/handlers.DepositRequest"
                         }
                     }
                 ],
@@ -253,19 +259,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Account topped up successfully",
                         "schema": {
-                            "$ref": "#/definitions/models.DepositResponse"
+                            "$ref": "#/definitions/handlers.DepositResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid amount or currency",
                         "schema": {
-                            "$ref": "#/definitions/models.DepositErrorResponse"
+                            "$ref": "#/definitions/handlers.DepositErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/models.DepositErrorResponse"
+                            "$ref": "#/definitions/handlers.DepositErrorResponse"
                         }
                     }
                 }
@@ -296,7 +302,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.WithdrawRequest"
+                            "$ref": "#/definitions/handlers.WithdrawRequest"
                         }
                     }
                 ],
@@ -304,19 +310,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Withdrawal successful",
                         "schema": {
-                            "$ref": "#/definitions/models.WithdrawResponse"
+                            "$ref": "#/definitions/handlers.WithdrawResponse"
                         }
                     },
                     "400": {
                         "description": "Insufficient funds or invalid amount",
                         "schema": {
-                            "$ref": "#/definitions/models.WithdrawErrorResponse"
+                            "$ref": "#/definitions/handlers.WithdrawErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/models.WithdrawErrorResponse"
+                            "$ref": "#/definitions/handlers.WithdrawErrorResponse"
                         }
                     }
                 }
@@ -324,11 +330,226 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "handlers.BalanceErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "description": "Error message\ndefault: Unauthorized",
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.BalanceResponse": {
+            "type": "object",
+            "properties": {
+                "balance": {
+                    "description": "User balances",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.CurrencyBalance"
+                        }
+                    ]
+                }
+            }
+        },
+        "handlers.CurrencyBalance": {
+            "type": "object",
+            "properties": {
+                "EUR": {
+                    "description": "Balance in EUR\ndefault: 50.0",
+                    "type": "number"
+                },
+                "RUB": {
+                    "description": "Balance in RUB\ndefault: 5000.0",
+                    "type": "number"
+                },
+                "USD": {
+                    "description": "Balance in USD\ndefault: 100.0",
+                    "type": "number"
+                }
+            }
+        },
+        "handlers.CurrencyBalanceAfterDeposit": {
+            "type": "object",
+            "properties": {
+                "EUR": {
+                    "description": "Balance in EUR\ndefault: 50.0",
+                    "type": "number"
+                },
+                "RUB": {
+                    "description": "Balance in RUB\ndefault: 5000.0",
+                    "type": "number"
+                },
+                "USD": {
+                    "description": "Balance in USD\ndefault: 100.0",
+                    "type": "number"
+                }
+            }
+        },
+        "handlers.CurrencyBalanceAfterWithdraw": {
+            "type": "object",
+            "properties": {
+                "EUR": {
+                    "description": "Balance in EUR\ndefault: 50.0",
+                    "type": "number"
+                },
+                "RUB": {
+                    "description": "Balance in RUB\ndefault: 5000.0",
+                    "type": "number"
+                },
+                "USD": {
+                    "description": "Balance in USD\ndefault: 100.0",
+                    "type": "number"
+                }
+            }
+        },
+        "handlers.DepositErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "description": "Error message\ndefault: Invalid amount or currency",
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.DepositRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "description": "Amount to deposit\nrequired: true\ndefault: 100.0",
+                    "type": "number"
+                },
+                "currency": {
+                    "description": "Currency\nrequired: true\ndefault: USD",
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.DepositResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "description": "Success message\ndefault: Account topped up successfully",
+                    "type": "string"
+                },
+                "new_balance": {
+                    "description": "New balance of the user",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.CurrencyBalanceAfterDeposit"
+                        }
+                    ]
+                }
+            }
+        },
+        "handlers.ExchangeErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "description": "Error message\ndefault: Insufficient funds or invalid currencies",
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.ExchangeRates": {
+            "type": "object",
+            "properties": {
+                "EUR": {
+                    "description": "EUR exchange rate\ndefault: 0.85",
+                    "type": "number"
+                },
+                "RUB": {
+                    "description": "RUB exchange rate\ndefault: 90.0",
+                    "type": "number"
+                },
+                "USD": {
+                    "description": "USD exchange rate\ndefault: 1.0",
+                    "type": "number"
+                }
+            }
+        },
+        "handlers.ExchangeRatesErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "description": "Error message\ndefault: Failed to retrieve exchange rates",
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.ExchangeRatesResponse": {
+            "type": "object",
+            "properties": {
+                "rates": {
+                    "description": "Exchange rates",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.ExchangeRates"
+                        }
+                    ]
+                }
+            }
+        },
+        "handlers.ExchangeRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "description": "Amount to exchange\nrequired: true\ndefault: 100.0",
+                    "type": "number"
+                },
+                "from_currency": {
+                    "description": "Source currency\nrequired: true\ndefault: USD",
+                    "type": "string"
+                },
+                "to_currency": {
+                    "description": "Target currency\nrequired: true\ndefault: EUR",
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.ExchangeResponse": {
+            "type": "object",
+            "properties": {
+                "exchanged_amount": {
+                    "description": "Amount received after exchange\ndefault: 85.0",
+                    "type": "number"
+                },
+                "message": {
+                    "description": "Success message\ndefault: Exchange successful",
+                    "type": "string"
+                },
+                "new_balance": {
+                    "description": "New balance after exchange",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.ExchangedBalance"
+                        }
+                    ]
+                }
+            }
+        },
+        "handlers.ExchangedBalance": {
+            "type": "object",
+            "properties": {
+                "EUR": {
+                    "description": "Balance in EUR\ndefault: 50.0",
+                    "type": "number"
+                },
+                "RUB": {
+                    "description": "Balance in RUB\ndefault: 5000.0",
+                    "type": "number"
+                },
+                "USD": {
+                    "description": "Balance in USD\ndefault: 100.0",
+                    "type": "number"
+                }
+            }
+        },
         "handlers.LoginErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
-                    "description": "Error message\nexample: Invalid username or password",
+                    "description": "Error message\ndefault: Invalid username or password",
                     "type": "string"
                 }
             }
@@ -337,11 +558,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "password": {
-                    "description": "Password\nrequired: true\nexample: secret123",
+                    "description": "Password\nrequired: true\ndefault: secret123",
                     "type": "string"
                 },
                 "username": {
-                    "description": "Username\nrequired: true\nexample: john_doe",
+                    "description": "Username\nrequired: true\ndefault: john_doe",
                     "type": "string"
                 }
             }
@@ -350,7 +571,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "token": {
-                    "description": "JWT token\nexample: JWT_TOKEN",
+                    "description": "JWT token\ndefault: JWT_TOKEN",
                     "type": "string"
                 }
             }
@@ -359,7 +580,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "error": {
-                    "description": "Error message\nexample: Username or email already exists",
+                    "description": "Error message\ndefault: Username or email already exists",
                     "type": "string"
                 }
             }
@@ -368,15 +589,15 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "email": {
-                    "description": "Email\nrequired: true\nexample: john@example.com",
+                    "description": "Email\nrequired: true\ndefault: john@example.com",
                     "type": "string"
                 },
                 "password": {
-                    "description": "Password\nrequired: true\nexample: secret123",
+                    "description": "Password\nrequired: true\ndefault: secret123",
                     "type": "string"
                 },
                 "username": {
-                    "description": "Username\nrequired: true\nexample: john_doe",
+                    "description": "Username\nrequired: true\ndefault: john_doe",
                     "type": "string"
                 }
             }
@@ -385,209 +606,45 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "message": {
-                    "description": "Success message\nexample: User registered successfully",
+                    "description": "Success message\ndefault: User registered successfully",
                     "type": "string"
                 }
             }
         },
-        "models.BalanceErrorResponse": {
+        "handlers.WithdrawErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
-                    "description": "Error message\nexample: Unauthorized",
+                    "description": "Error message\ndefault: Insufficient funds or invalid amount",
                     "type": "string"
                 }
             }
         },
-        "models.BalanceResponse": {
-            "type": "object",
-            "properties": {
-                "balance": {
-                    "description": "User balances",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.CurrencyBalance"
-                        }
-                    ]
-                }
-            }
-        },
-        "models.CurrencyBalance": {
-            "type": "object",
-            "properties": {
-                "EUR": {
-                    "description": "Balance in EUR\nexample: 50.0",
-                    "type": "number"
-                },
-                "RUB": {
-                    "description": "Balance in RUB\nexample: 5000.0",
-                    "type": "number"
-                },
-                "USD": {
-                    "description": "Balance in USD\nexample: 100.0",
-                    "type": "number"
-                }
-            }
-        },
-        "models.DepositErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "description": "Error message\nexample: Invalid amount or currency",
-                    "type": "string"
-                }
-            }
-        },
-        "models.DepositRequest": {
+        "handlers.WithdrawRequest": {
             "type": "object",
             "properties": {
                 "amount": {
-                    "description": "Amount to deposit\nrequired: true\nexample: 100.0",
+                    "description": "Amount to withdraw\nrequired: true\ndefault: 50.0",
                     "type": "number"
                 },
                 "currency": {
-                    "description": "Currency\nrequired: true\nexample: USD",
+                    "description": "Currency\nrequired: true\ndefault: USD",
                     "type": "string"
                 }
             }
         },
-        "models.DepositResponse": {
+        "handlers.WithdrawResponse": {
             "type": "object",
             "properties": {
                 "message": {
-                    "description": "Success message\nexample: Account topped up successfully",
+                    "description": "Success message\ndefault: Withdrawal successful",
                     "type": "string"
                 },
                 "new_balance": {
                     "description": "New balance of the user",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/models.CurrencyBalance"
-                        }
-                    ]
-                }
-            }
-        },
-        "models.ExchangeErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "description": "Error message\nexample: Insufficient funds or invalid currencies",
-                    "type": "string"
-                }
-            }
-        },
-        "models.ExchangeRates": {
-            "type": "object",
-            "properties": {
-                "EUR": {
-                    "type": "number",
-                    "example": 0.85
-                },
-                "RUB": {
-                    "type": "number",
-                    "example": 90
-                },
-                "USD": {
-                    "type": "number",
-                    "example": 1
-                }
-            }
-        },
-        "models.ExchangeRatesErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "description": "Error message\nexample: Failed to retrieve exchange rates",
-                    "type": "string"
-                }
-            }
-        },
-        "models.ExchangeRatesResponse": {
-            "type": "object",
-            "properties": {
-                "rates": {
-                    "description": "Exchange rates",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.ExchangeRates"
-                        }
-                    ]
-                }
-            }
-        },
-        "models.ExchangeRequest": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "description": "Amount to exchange\nrequired: true\nexample: 100.0",
-                    "type": "number"
-                },
-                "from_currency": {
-                    "description": "Source currency\nrequired: true\nexample: USD",
-                    "type": "string"
-                },
-                "to_currency": {
-                    "description": "Target currency\nrequired: true\nexample: EUR",
-                    "type": "string"
-                }
-            }
-        },
-        "models.ExchangeResponse": {
-            "type": "object",
-            "properties": {
-                "exchanged_amount": {
-                    "description": "Amount received after exchange\nexample: 85.0",
-                    "type": "number"
-                },
-                "message": {
-                    "description": "Success message\nexample: Exchange successful",
-                    "type": "string"
-                },
-                "new_balance": {
-                    "description": "New balance after exchange",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.CurrencyBalance"
-                        }
-                    ]
-                }
-            }
-        },
-        "models.WithdrawErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "description": "Error message\nexample: Insufficient funds or invalid amount",
-                    "type": "string"
-                }
-            }
-        },
-        "models.WithdrawRequest": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "description": "Amount to withdraw\nrequired: true\nexample: 50.0",
-                    "type": "number"
-                },
-                "currency": {
-                    "description": "Currency\nrequired: true\nexample: USD",
-                    "type": "string"
-                }
-            }
-        },
-        "models.WithdrawResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "description": "Success message\nexample: Withdrawal successful",
-                    "type": "string"
-                },
-                "new_balance": {
-                    "description": "New balance of the user",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.CurrencyBalance"
+                            "$ref": "#/definitions/handlers.CurrencyBalanceAfterWithdraw"
                         }
                     ]
                 }

@@ -67,40 +67,42 @@ func (mr *MockDepositTokenerMockRecorder) GetTokenFromRequest(ctx, r interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTokenFromRequest", reflect.TypeOf((*MockDepositTokener)(nil).GetTokenFromRequest), ctx, r)
 }
 
-// MockWalletDepositWriter is a mock of WalletDepositWriter interface.
-type MockWalletDepositWriter struct {
+// MockDepositWriter is a mock of DepositWriter interface.
+type MockDepositWriter struct {
 	ctrl     *gomock.Controller
-	recorder *MockWalletDepositWriterMockRecorder
+	recorder *MockDepositWriterMockRecorder
 }
 
-// MockWalletDepositWriterMockRecorder is the mock recorder for MockWalletDepositWriter.
-type MockWalletDepositWriterMockRecorder struct {
-	mock *MockWalletDepositWriter
+// MockDepositWriterMockRecorder is the mock recorder for MockDepositWriter.
+type MockDepositWriterMockRecorder struct {
+	mock *MockDepositWriter
 }
 
-// NewMockWalletDepositWriter creates a new mock instance.
-func NewMockWalletDepositWriter(ctrl *gomock.Controller) *MockWalletDepositWriter {
-	mock := &MockWalletDepositWriter{ctrl: ctrl}
-	mock.recorder = &MockWalletDepositWriterMockRecorder{mock}
+// NewMockDepositWriter creates a new mock instance.
+func NewMockDepositWriter(ctrl *gomock.Controller) *MockDepositWriter {
+	mock := &MockDepositWriter{ctrl: ctrl}
+	mock.recorder = &MockDepositWriterMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockWalletDepositWriter) EXPECT() *MockWalletDepositWriterMockRecorder {
+func (m *MockDepositWriter) EXPECT() *MockDepositWriterMockRecorder {
 	return m.recorder
 }
 
-// SaveDeposit mocks base method.
-func (m *MockWalletDepositWriter) SaveDeposit(ctx context.Context, userID uuid.UUID, amount float64, currency string) (map[string]float64, error) {
+// Deposit mocks base method.
+func (m *MockDepositWriter) Deposit(ctx context.Context, userID uuid.UUID, amount float64, currency string) (float64, float64, float64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveDeposit", ctx, userID, amount, currency)
-	ret0, _ := ret[0].(map[string]float64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret := m.ctrl.Call(m, "Deposit", ctx, userID, amount, currency)
+	ret0, _ := ret[0].(float64)
+	ret1, _ := ret[1].(float64)
+	ret2, _ := ret[2].(float64)
+	ret3, _ := ret[3].(error)
+	return ret0, ret1, ret2, ret3
 }
 
-// SaveDeposit indicates an expected call of SaveDeposit.
-func (mr *MockWalletDepositWriterMockRecorder) SaveDeposit(ctx, userID, amount, currency interface{}) *gomock.Call {
+// Deposit indicates an expected call of Deposit.
+func (mr *MockDepositWriterMockRecorder) Deposit(ctx, userID, amount, currency interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveDeposit", reflect.TypeOf((*MockWalletDepositWriter)(nil).SaveDeposit), ctx, userID, amount, currency)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Deposit", reflect.TypeOf((*MockDepositWriter)(nil).Deposit), ctx, userID, amount, currency)
 }

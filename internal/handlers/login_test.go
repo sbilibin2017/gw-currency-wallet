@@ -17,112 +17,106 @@ func TestLoginHandler(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	type requestBody struct {
-		username string
-		password string
-	}
+	mockSvc := NewMockLoginer(ctrl)
 
 	tests := []struct {
 		name         string
-		reqBody      requestBody
-		mockSetup    func(m *MockLoginer)
+		inputBody    interface{}
+		mockSetup    func()
 		expectedCode int
-		expectedBody map[string]string
-		rawBody      bool // if true, pass raw body to simulate invalid JSON
+		expectedBody interface{}
 	}{
 		{
 			name: "success",
-			reqBody: requestBody{
-				username: "john",
-				password: "secret",
+			inputBody: LoginRequest{
+				Username: "john",
+				Password: "pass123",
 			},
-			mockSetup: func(m *MockLoginer) {
-				m.EXPECT().
-					Login(gomock.Any(), "john", "secret").
+			mockSetup: func() {
+				mockSvc.EXPECT().
+					Login(gomock.Any(), "john", "pass123").
 					Return("JWT_TOKEN", nil)
 			},
 			expectedCode: http.StatusOK,
-			expectedBody: map[string]string{"token": "JWT_TOKEN"},
+			expectedBody: &LoginResponse{
+				Token: "JWT_TOKEN",
+			},
 		},
 		{
-			name: "invalid credentials",
-			reqBody: requestBody{
-				username: "alice",
-				password: "wrongpass",
+			name:         "invalid JSON",
+			inputBody:    "{invalid json}",
+			mockSetup:    func() {},
+			expectedCode: http.StatusBadRequest,
+			expectedBody: &LoginErrorResponse{
+				Error: "invalid request body",
 			},
-			mockSetup: func(m *MockLoginer) {
-				m.EXPECT().
-					Login(gomock.Any(), "alice", "wrongpass").
-					Return("", services.ErrInvalidCredentials)
-			},
-			expectedCode: http.StatusUnauthorized,
-			expectedBody: map[string]string{"error": "Invalid username or password"},
 		},
 		{
-			name: "user does not exist",
-			reqBody: requestBody{
-				username: "bob",
-				password: "secret",
+			name: "user does not exist / wrong credentials",
+			inputBody: LoginRequest{
+				Username: "wronguser",
+				Password: "wrongpass",
 			},
-			mockSetup: func(m *MockLoginer) {
-				m.EXPECT().
-					Login(gomock.Any(), "bob", "secret").
+			mockSetup: func() {
+				mockSvc.EXPECT().
+					Login(gomock.Any(), "wronguser", "wrongpass").
 					Return("", services.ErrUserDoesNotExist)
 			},
 			expectedCode: http.StatusUnauthorized,
-			expectedBody: map[string]string{"error": "Invalid username or password"},
+			expectedBody: &LoginErrorResponse{
+				Error: "Invalid username or password",
+			},
 		},
 		{
-			name: "internal server error",
-			reqBody: requestBody{
-				username: "eve",
-				password: "pass",
+			name: "internal error",
+			inputBody: LoginRequest{
+				Username: "john",
+				Password: "pass123",
 			},
-			mockSetup: func(m *MockLoginer) {
-				m.EXPECT().
-					Login(gomock.Any(), "eve", "pass").
-					Return("", errors.New("database failure"))
+			mockSetup: func() {
+				mockSvc.EXPECT().
+					Login(gomock.Any(), "john", "pass123").
+					Return("", errors.New("database error"))
 			},
 			expectedCode: http.StatusInternalServerError,
-			expectedBody: map[string]string{"error": "Internal server error"},
-		},
-		{
-			name:         "invalid json",
-			rawBody:      true,
-			expectedCode: http.StatusBadRequest,
-			expectedBody: map[string]string{"error": "invalid request body"},
+			expectedBody: &LoginErrorResponse{
+				Error: "Internal server error",
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockSvc := NewMockLoginer(ctrl)
-			if tt.mockSetup != nil {
-				tt.mockSetup(mockSvc)
+			tt.mockSetup()
+
+			var bodyBytes []byte
+			switch v := tt.inputBody.(type) {
+			case string:
+				bodyBytes = []byte(v)
+			default:
+				bodyBytes, _ = json.Marshal(v)
 			}
+
+			req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewReader(bodyBytes))
+			w := httptest.NewRecorder()
 
 			handler := NewLoginHandler(mockSvc)
+			handler.ServeHTTP(w, req)
 
-			var req *http.Request
-			if tt.rawBody {
-				req = httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString("{invalid json}"))
-			} else {
-				bodyBytes, _ := json.Marshal(LoginRequest{
-					Username: tt.reqBody.username,
-					Password: tt.reqBody.password,
-				})
-				req = httptest.NewRequest(http.MethodPost, "/login", bytes.NewBuffer(bodyBytes))
+			assert.Equal(t, tt.expectedCode, w.Code)
+
+			if w.Code != http.StatusNoContent {
+				var respBody interface{}
+				switch tt.expectedCode {
+				case http.StatusOK:
+					respBody = &LoginResponse{}
+				default:
+					respBody = &LoginErrorResponse{}
+				}
+				err := json.Unmarshal(w.Body.Bytes(), respBody)
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedBody, respBody)
 			}
-
-			rr := httptest.NewRecorder()
-			handler(rr, req)
-
-			assert.Equal(t, tt.expectedCode, rr.Code)
-
-			var resp map[string]string
-			err := json.Unmarshal(rr.Body.Bytes(), &resp)
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedBody, resp)
 		})
 	}
 }

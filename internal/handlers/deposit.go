@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
-	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 )
 
 // DepositTokener defines only the methods needed by this handler.
@@ -16,9 +15,9 @@ type DepositTokener interface {
 	GetClaims(ctx context.Context, tokenString string) (*jwt.Claims, error)
 }
 
-// WalletDepositWriter defines the interface that the service must implement.
-type WalletDepositWriter interface {
-	UpdateDeposit(ctx context.Context, userID uuid.UUID, amount float64, currency string) (map[string]float64, error)
+// DepositWriter defines the interface that the service must implement.
+type DepositWriter interface {
+	Deposit(ctx context.Context, userID uuid.UUID, amount float64, currency string) (usd, rub, eur float64, err error)
 }
 
 // CurrencyBalanceAfterDeposit represents balances for different currencies
@@ -76,20 +75,20 @@ type DepositErrorResponse struct {
 // @Tags wallet
 // @Accept json
 // @Produce json
-// @Param request body models.DepositRequest true "Deposit Request"
-// @Success 200 {object} models.DepositResponse "Account topped up successfully"
-// @Failure 400 {object} models.DepositErrorResponse "Invalid amount or currency"
-// @Failure 401 {object} models.DepositErrorResponse "Unauthorized"
+// @Param request body handlers.DepositRequest true "Deposit Request"
+// @Success 200 {object} handlers.DepositResponse "Account topped up successfully"
+// @Failure 400 {object} handlers.DepositErrorResponse "Invalid amount or currency"
+// @Failure 401 {object} handlers.DepositErrorResponse "Unauthorized"
 // @Router /wallet/deposit [post]
 // @Security BearerAuth
 func NewDepositHandler(
-	svc WalletDepositWriter,
+	svc DepositWriter,
 	tokenGetter DepositTokener,
 ) http.HandlerFunc {
 	validCurrencies := map[string]struct{}{
-		models.USD: {},
-		models.RUB: {},
-		models.EUR: {},
+		"USD": {},
+		"RUB": {},
+		"EUR": {},
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -127,24 +126,17 @@ func NewDepositHandler(
 			return
 		}
 
-		newBalancesMap, err := svc.UpdateDeposit(ctx, claims.UserID, req.Amount, req.Currency)
+		usd, rub, eur, err := svc.Deposit(ctx, claims.UserID, req.Amount, req.Currency)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Intrenal server error"})
+			json.NewEncoder(w).Encode(DepositErrorResponse{Error: "Internal server error"})
 			return
 		}
 
-		getBalance := func(currency string) float64 {
-			if val, ok := newBalancesMap[currency]; ok {
-				return val
-			}
-			return 0.0
-		}
-
 		newBalance := CurrencyBalanceAfterDeposit{
-			USD: getBalance(models.USD),
-			RUB: getBalance(models.RUB),
-			EUR: getBalance(models.EUR),
+			USD: usd,
+			RUB: rub,
+			EUR: eur,
 		}
 
 		resp := DepositResponse{

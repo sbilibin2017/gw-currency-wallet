@@ -35,13 +35,14 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// Build info variables, set via ldflags at build time.
+// Build info variables
 var (
-	buildVersion = "N/A" // Version of the service
-	buildDate    = "N/A" // Build date
-	buildCommit  = "N/A" // Git commit hash
+	buildVersion = "N/A"
+	buildDate    = "N/A"
+	buildCommit  = "N/A"
 )
 
+// Package main gw-currency-wallet API.
 // @title gw-currency-wallet API
 // @version 1.0.0
 // @description Microservice for managing user wallets and currency exchange
@@ -58,7 +59,7 @@ func main() {
 	appHost, appPort, pgHost, pgPort, pgUser, pgPassword, pgDB,
 		pgMaxOpenConns, pgMaxIdleConns,
 		redisHost, redisPort, redisDB, redisPassword,
-		redisPoolSize, redisMinIdleConns,
+		redisPoolSize, redisMinIdleConns, redisExp,
 		gwHost, gwPort, logLevel,
 		jwtSecret, jwtExp,
 		err := parseConfig(configPath)
@@ -71,7 +72,7 @@ func main() {
 		pgHost, pgPort, pgUser, pgPassword, pgDB,
 		pgMaxOpenConns, pgMaxIdleConns,
 		redisHost, redisPort, redisDB, redisPassword,
-		redisPoolSize, redisMinIdleConns,
+		redisPoolSize, redisMinIdleConns, redisExp,
 		gwHost, gwPort,
 		logLevel,
 		jwtSecret, jwtExp,
@@ -80,26 +81,25 @@ func main() {
 	}
 }
 
-// printBuildInfo prints the build version, commit hash, and build date.
 func printBuildInfo() {
-	fmt.Printf("Starting service version %s, commit %s, build %s\n", buildVersion, buildCommit, buildDate)
+	fmt.Printf("Version: %s\n", buildVersion)
+	fmt.Printf("Commit: %s\n", buildCommit)
+	fmt.Printf("Build: %s\n", buildDate)
 }
 
-// parseFlags parses command-line flags and returns the config file path.
 func parseFlags() string {
 	c := flag.String("c", "config.env", "Path to configuration file")
 	flag.Parse()
 	return *c
 }
 
-// parseConfig loads environment variables from a file and returns
-// all application, database, Redis, gRPC, logging, and JWT configuration.
+// parseConfig loads env and returns all configs including redisExp
 func parseConfig(path string) (
 	appHost, appPort string,
 	pgHost string, pgPort int, pgUser, pgPassword, pgDB string,
 	pgMaxOpenConns, pgMaxIdleConns int,
-	redisHost string, redisPort int, redisDB int, redisPassword string,
-	redisPoolSize, redisMinIdleConns int,
+	redisHost string, redisPort, redisDB int, redisPassword string,
+	redisPoolSize, redisMinIdleConns, redisExp int,
 	gwHost, gwPort, logLevel string,
 	jwtSecretKey string, jwtExpSecond int,
 	err error,
@@ -113,12 +113,12 @@ func parseConfig(path string) (
 		return defaultValue
 	}
 
-	// Application config
+	// Application
 	appHost = getEnv("APP_HOST", "localhost")
 	appPort = getEnv("APP_PORT", "8080")
 	logLevel = getEnv("APP_LOG_LEVEL", "info")
 
-	// PostgreSQL config
+	// PostgreSQL
 	pgHost = getEnv("POSTGRES_HOST", "localhost")
 	pgUser = getEnv("POSTGRES_USER", "user")
 	pgPassword = getEnv("POSTGRES_PASSWORD", "password")
@@ -133,7 +133,7 @@ func parseConfig(path string) (
 		return
 	}
 
-	// Redis config
+	// Redis
 	redisHost = getEnv("REDIS_HOST", "localhost")
 	if redisPort, err = strconv.Atoi(getEnv("REDIS_PORT", "6379")); err != nil {
 		return
@@ -148,12 +148,15 @@ func parseConfig(path string) (
 	if redisMinIdleConns, err = strconv.Atoi(getEnv("REDIS_MIN_IDLE_CONNS", "2")); err != nil {
 		return
 	}
+	if redisExp, err = strconv.Atoi(getEnv("REDIS_EXP_SECOND", "60")); err != nil {
+		return
+	}
 
-	// gRPC config
+	// gRPC
 	gwHost = getEnv("GW_EXCHANGER_HOST", "localhost")
 	gwPort = getEnv("GW_EXCHANGER_PORT", "50051")
 
-	// JWT config
+	// JWT
 	jwtSecretKey = getEnv("JWT_SECRET_KEY", "my_super_secret_key")
 	if jwtExpSecond, err = strconv.Atoi(getEnv("JWT_EXP_SECOND", "60")); err != nil {
 		return
@@ -162,20 +165,17 @@ func parseConfig(path string) (
 	return
 }
 
-// run initializes the logger, database, Redis, gRPC client, and HTTP server.
-// It sets up routes, applies middleware, and handles graceful shutdown.
+// run initializes logger, DB, Redis, gRPC, JWT, services, handlers, router and handles shutdown
 func run(ctx context.Context,
 	appHost, appPort string,
 	pgHost string, pgPort int, pgUser, pgPassword, pgDB string,
 	pgMaxOpenConns, pgMaxIdleConns int,
 	redisHost string, redisPort, redisDB int, redisPassword string,
-	redisPoolSize, redisMinIdleConns int, redisExp int,
+	redisPoolSize, redisMinIdleConns, redisExp int,
 	gwHost, gwPort, logLevel string,
 	jwtSecretKey string, jwtExpSecond int,
 ) error {
-	// -----------------------
-	// Initialize logger
-	// -----------------------
+	// Logger
 	if err := logger.Initialize(logLevel); err != nil {
 		fmt.Println("failed to initialize logger:", err)
 		return err
@@ -183,9 +183,7 @@ func run(ctx context.Context,
 	defer logger.Log.Sync()
 	logger.Log.Infof("Logger initialized with level %s", logLevel)
 
-	// -----------------------
-	// Connect to PostgreSQL
-	// -----------------------
+	// PostgreSQL
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		pgUser, pgPassword, pgHost, pgPort, pgDB)
 	db, err := sqlx.ConnectContext(ctx, "pgx", dsn)
@@ -201,9 +199,7 @@ func run(ctx context.Context,
 		return err
 	}
 
-	// -----------------------
-	// Connect to Redis
-	// -----------------------
+	// Redis
 	rdb := redis.NewClient(&redis.Options{
 		Addr:         fmt.Sprintf("%s:%d", redisHost, redisPort),
 		Password:     redisPassword,
@@ -217,11 +213,9 @@ func run(ctx context.Context,
 	}
 	defer rdb.Close()
 
-	// -----------------------
-	// Connect to gRPC service
-	// -----------------------
+	// gRPC
 	grpcAddr := fmt.Sprintf("%s:%s", gwHost, gwPort)
-	conn, err := grpc.Dial(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		logger.Log.Error("Failed to connect to gRPC service at", grpcAddr, ":", err)
 		return err
@@ -229,52 +223,42 @@ func run(ctx context.Context,
 	defer conn.Close()
 	exchangeGRPCClient := pb.NewExchangeServiceClient(conn)
 
+	// JWT
 	jwtService := jwt.New(
 		jwt.WithSecretKey(jwtSecretKey),
 		jwt.WithExpiration(time.Duration(jwtExpSecond)*time.Second),
 	)
 
+	// Repositories
 	userReadRepo := repositories.NewUserReadRepository(db)
 	userWriteRepo := repositories.NewUserWriteRepository(db)
-
 	walletReaderRepo := repositories.NewWalletReaderRepository(db)
 	walletWriterRepo := repositories.NewWalletWriterRepository(db, nil)
-
-	exchangeRateCacheRepo := repositories.NewExchangeRateCacheRepository(rdb, time.Duration(redisExp*time.Second))
-
+	exchangeRateCacheRepo := repositories.NewExchangeRateCacheRepository(rdb, time.Duration(redisExp)*time.Second)
 	exchangeGRPCFacade := facades.NewExchangeRatesGRPCFacade(exchangeGRPCClient)
 
+	// Services
 	authService := services.NewAuthService(userReadRepo, userWriteRepo, jwtService)
-	exchangeService := services.NewExchangeService(
-		walletWriterRepo,
-		walletReaderRepo,
-		exchangeGRPCFacade,
-		exchangeRateCacheRepo,
-	)
+	walletService := services.NewWalletService(walletWriterRepo, walletReaderRepo, exchangeGRPCFacade, exchangeRateCacheRepo)
 
+	// Handlers
 	registerHandler := handlers.NewRegisterHandler(authService)
 	loginHandler := handlers.NewLoginHandler(authService)
+	balanceHandler := handlers.NewGetBalanceHandler(walletService, jwtService)
+	depositHandler := handlers.NewDepositHandler(walletService, jwtService)
+	withdrawHandler := handlers.NewWithdrawHandler(walletService, jwtService)
+	getRatesHandler := handlers.NewGetExchangeRatesHandler(walletService, jwtService)
+	exchangeHandler := handlers.NewExchangeHandler(jwtService, walletService)
 
-	balanceHandler := handlers.NewGetBalanceHandler(walletReaderRepo, jwtService)
-	depositHandler := handlers.NewDepositHandler(walletWriterRepo, jwtService)
-	withdrawHandler := handlers.NewWithdrawHandler(walletWriterRepo, jwtService)
-
-	getRatesHandler := handlers.NewGetExchangeRatesHandler(exchangeService, jwtService)
-	exchangeHandler := handlers.NewExchangeHandler(jwtService, exchangeService)
-
-	// -----------------------
-	// Setup router
-	// -----------------------
+	// Router
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
 	r.Use(middlewares.LoggingMiddleware)
 
-	// Public routes
 	r.Post("/register", registerHandler)
 	r.Post("/login", loginHandler)
 
-	// Protected routes
-	authMiddleware := middlewares.AuthMiddleware([]byte(jwtSecretKey))
+	authMiddleware := middlewares.AuthMiddleware(jwtService)
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddleware)
 		r.Get("/balance", balanceHandler)
@@ -284,19 +268,16 @@ func run(ctx context.Context,
 		r.Post("/exchange", exchangeHandler)
 	})
 
-	// Swagger
 	r.Get("/swagger/*", httpSwagger.Handler(
 		httpSwagger.URL(fmt.Sprintf("http://%s:%s/swagger/doc.json", appHost, appPort)),
 	))
 
-	// -----------------------
-	// Start HTTP server with graceful shutdown
-	// -----------------------
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("%s:%s", appHost, appPort),
 		Handler: r,
 	}
 
+	// Graceful shutdown
 	errChan := make(chan error, 1)
 	ctxShutdown, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()

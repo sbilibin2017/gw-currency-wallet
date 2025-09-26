@@ -71,8 +71,7 @@ func NewLoginHandler(svc Loginer) http.HandlerFunc {
 		token, err := svc.Login(r.Context(), req.Username, req.Password)
 		if err != nil {
 			switch {
-			case errors.Is(err, services.ErrInvalidCredentials),
-				errors.Is(err, services.ErrUserDoesNotExist):
+			case errors.Is(err, services.ErrUserDoesNotExist):
 				w.WriteHeader(http.StatusUnauthorized)
 				json.NewEncoder(w).Encode(LoginErrorResponse{
 					Error: "Invalid username or password",

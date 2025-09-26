@@ -90,12 +90,14 @@ func (m *MockExchangeRatesReader) EXPECT() *MockExchangeRatesReaderMockRecorder 
 }
 
 // GetExchangeRates mocks base method.
-func (m *MockExchangeRatesReader) GetExchangeRates(ctx context.Context) (map[string]float32, error) {
+func (m *MockExchangeRatesReader) GetExchangeRates(ctx context.Context) (float32, float32, float32, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetExchangeRates", ctx)
-	ret0, _ := ret[0].(map[string]float32)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret0, _ := ret[0].(float32)
+	ret1, _ := ret[1].(float32)
+	ret2, _ := ret[2].(float32)
+	ret3, _ := ret[3].(error)
+	return ret0, ret1, ret2, ret3
 }
 
 // GetExchangeRates indicates an expected call of GetExchangeRates.

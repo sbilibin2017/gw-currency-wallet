@@ -90,17 +90,19 @@ func (m *MockWalletWithdrawWriter) EXPECT() *MockWalletWithdrawWriterMockRecorde
 	return m.recorder
 }
 
-// SaveWithdraw mocks base method.
-func (m *MockWalletWithdrawWriter) SaveWithdraw(ctx context.Context, userID uuid.UUID, amount float64, currency string) (map[string]float64, error) {
+// Withdraw mocks base method.
+func (m *MockWalletWithdrawWriter) Withdraw(ctx context.Context, userID uuid.UUID, amount float64, currency string) (float64, float64, float64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveWithdraw", ctx, userID, amount, currency)
-	ret0, _ := ret[0].(map[string]float64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret := m.ctrl.Call(m, "Withdraw", ctx, userID, amount, currency)
+	ret0, _ := ret[0].(float64)
+	ret1, _ := ret[1].(float64)
+	ret2, _ := ret[2].(float64)
+	ret3, _ := ret[3].(error)
+	return ret0, ret1, ret2, ret3
 }
 
-// SaveWithdraw indicates an expected call of SaveWithdraw.
-func (mr *MockWalletWithdrawWriterMockRecorder) SaveWithdraw(ctx, userID, amount, currency interface{}) *gomock.Call {
+// Withdraw indicates an expected call of Withdraw.
+func (mr *MockWalletWithdrawWriterMockRecorder) Withdraw(ctx, userID, amount, currency interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveWithdraw", reflect.TypeOf((*MockWalletWithdrawWriter)(nil).SaveWithdraw), ctx, userID, amount, currency)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Withdraw", reflect.TypeOf((*MockWalletWithdrawWriter)(nil).Withdraw), ctx, userID, amount, currency)
 }

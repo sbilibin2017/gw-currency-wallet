@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
-	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/services"
 )
 
@@ -19,7 +18,7 @@ type WithdrawTokener interface {
 
 // WalletWithdrawWriter defines the interface that the service must implement.
 type WalletWithdrawWriter interface {
-	UpdateWithdraw(ctx context.Context, userID uuid.UUID, amount float64, currency string) (map[string]float64, error)
+	Withdraw(ctx context.Context, userID uuid.UUID, amount float64, currency string) (usd, rub, eur float64, err error)
 }
 
 // CurrencyBalanceAfterWithdraw represents balances for different currencies
@@ -128,7 +127,7 @@ func NewWithdrawHandler(
 			return
 		}
 
-		newBalancesMap, err := svc.UpdateWithdraw(ctx, claims.UserID, req.Amount, req.Currency)
+		usd, rub, eur, err := svc.Withdraw(ctx, claims.UserID, req.Amount, req.Currency)
 		if err != nil {
 			switch err {
 			case services.ErrInsufficientFunds:
@@ -141,17 +140,10 @@ func NewWithdrawHandler(
 			return
 		}
 
-		getBalance := func(currency string) float64 {
-			if val, ok := newBalancesMap[currency]; ok {
-				return val
-			}
-			return 0.0
-		}
-
 		newBalance := CurrencyBalanceAfterWithdraw{
-			USD: getBalance(models.USD),
-			RUB: getBalance(models.RUB),
-			EUR: getBalance(models.EUR),
+			USD: usd,
+			RUB: rub,
+			EUR: eur,
 		}
 
 		resp := WithdrawResponse{

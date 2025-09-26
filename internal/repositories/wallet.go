@@ -19,7 +19,7 @@ func NewWalletWriterRepository(db *sqlx.DB, txGetter func(ctx context.Context) *
 }
 
 // SaveDeposit performs an UPSERT: creates wallet if not exists, otherwise increases balance.
-func (r *WalletWriterRepository) SaveDeposit(ctx context.Context, userID uuid.UUID, amount float64, currency string) (float64, error) {
+func (r *WalletWriterRepository) SaveDeposit(ctx context.Context, userID uuid.UUID, amount float64, currency string) error {
 	query := `
 		INSERT INTO wallets (wallet_id, user_id, currency, balance, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, NOW(), NOW())
@@ -35,16 +35,13 @@ func (r *WalletWriterRepository) SaveDeposit(ctx context.Context, userID uuid.UU
 		}
 	}
 
-	var newBalance float64
-	err := sqlx.GetContext(ctx, executor, &newBalance, query, uuid.New(), userID, currency, amount)
-	if err != nil {
-		return 0, err
-	}
-	return newBalance, nil
+	var ignore float64
+	err := sqlx.GetContext(ctx, executor, &ignore, query, uuid.New(), userID, currency, amount)
+	return err
 }
 
 // SaveWithdraw performs an UPSERT-like withdrawal in a single query.
-func (r *WalletWriterRepository) SaveWithdraw(ctx context.Context, userID uuid.UUID, amount float64, currency string) (float64, error) {
+func (r *WalletWriterRepository) SaveWithdraw(ctx context.Context, userID uuid.UUID, amount float64, currency string) error {
 	query := `
 		INSERT INTO wallets (wallet_id, user_id, currency, balance, created_at, updated_at)
 		VALUES ($1, $2, $3, 0, NOW(), NOW())
@@ -61,16 +58,15 @@ func (r *WalletWriterRepository) SaveWithdraw(ctx context.Context, userID uuid.U
 		}
 	}
 
-	var newBalance float64
-	err := sqlx.GetContext(ctx, executor, &newBalance, query, uuid.New(), userID, currency, amount)
+	var ignore float64
+	err := sqlx.GetContext(ctx, executor, &ignore, query, uuid.New(), userID, currency, amount)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			// Means conflict existed but balance < amount
-			return 0, sql.ErrNoRows
+			return sql.ErrNoRows
 		}
-		return 0, err
+		return err
 	}
-	return newBalance, nil
+	return nil
 }
 
 // WalletReaderRepository handles wallet read operations

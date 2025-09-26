@@ -67,40 +67,42 @@ func (mr *MockBalanceTokenerMockRecorder) GetTokenFromRequest(ctx, r interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTokenFromRequest", reflect.TypeOf((*MockBalanceTokener)(nil).GetTokenFromRequest), ctx, r)
 }
 
-// MockWalletReader is a mock of WalletReader interface.
-type MockWalletReader struct {
+// MockBalancer is a mock of Balancer interface.
+type MockBalancer struct {
 	ctrl     *gomock.Controller
-	recorder *MockWalletReaderMockRecorder
+	recorder *MockBalancerMockRecorder
 }
 
-// MockWalletReaderMockRecorder is the mock recorder for MockWalletReader.
-type MockWalletReaderMockRecorder struct {
-	mock *MockWalletReader
+// MockBalancerMockRecorder is the mock recorder for MockBalancer.
+type MockBalancerMockRecorder struct {
+	mock *MockBalancer
 }
 
-// NewMockWalletReader creates a new mock instance.
-func NewMockWalletReader(ctrl *gomock.Controller) *MockWalletReader {
-	mock := &MockWalletReader{ctrl: ctrl}
-	mock.recorder = &MockWalletReaderMockRecorder{mock}
+// NewMockBalancer creates a new mock instance.
+func NewMockBalancer(ctrl *gomock.Controller) *MockBalancer {
+	mock := &MockBalancer{ctrl: ctrl}
+	mock.recorder = &MockBalancerMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockWalletReader) EXPECT() *MockWalletReaderMockRecorder {
+func (m *MockBalancer) EXPECT() *MockBalancerMockRecorder {
 	return m.recorder
 }
 
-// GetByUserID mocks base method.
-func (m *MockWalletReader) GetByUserID(ctx context.Context, userID uuid.UUID) (map[string]float64, error) {
+// GetUserBalance mocks base method.
+func (m *MockBalancer) GetUserBalance(ctx context.Context, userID uuid.UUID) (float64, float64, float64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetByUserID", ctx, userID)
-	ret0, _ := ret[0].(map[string]float64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret := m.ctrl.Call(m, "GetUserBalance", ctx, userID)
+	ret0, _ := ret[0].(float64)
+	ret1, _ := ret[1].(float64)
+	ret2, _ := ret[2].(float64)
+	ret3, _ := ret[3].(error)
+	return ret0, ret1, ret2, ret3
 }
 
-// GetByUserID indicates an expected call of GetByUserID.
-func (mr *MockWalletReaderMockRecorder) GetByUserID(ctx, userID interface{}) *gomock.Call {
+// GetUserBalance indicates an expected call of GetUserBalance.
+func (mr *MockBalancerMockRecorder) GetUserBalance(ctx, userID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByUserID", reflect.TypeOf((*MockWalletReader)(nil).GetByUserID), ctx, userID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserBalance", reflect.TypeOf((*MockBalancer)(nil).GetUserBalance), ctx, userID)
 }

@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
-	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 )
 
 // ExchangeRatesTokener defines only the methods needed by this handler.
@@ -17,7 +16,7 @@ type ExchangeRatesTokener interface {
 
 // ExchangeRatesReader defines the interface for fetching exchange rates.
 type ExchangeRatesReader interface {
-	GetExchangeRates(ctx context.Context) (map[string]float32, error)
+	GetExchangeRates(ctx context.Context) (usd, rub, eur float32, err error)
 }
 
 // ExchangeRates represents exchange rates for supported currencies
@@ -82,25 +81,18 @@ func NewGetExchangeRatesHandler(
 			return
 		}
 
-		ratesMap, err := reader.GetExchangeRates(ctx)
+		usd, rub, eur, err := reader.GetExchangeRates(ctx)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(ExchangeRatesErrorResponse{Error: "Failed to retrieve exchange rates"})
 			return
 		}
 
-		getRate := func(currency string) float32 {
-			if val, ok := ratesMap[currency]; ok {
-				return val
-			}
-			return 0.0
-		}
-
 		resp := ExchangeRatesResponse{
 			Rates: ExchangeRates{
-				USD: getRate(models.USD),
-				RUB: getRate(models.RUB),
-				EUR: getRate(models.EUR),
+				USD: usd,
+				RUB: rub,
+				EUR: eur,
 			},
 		}
 

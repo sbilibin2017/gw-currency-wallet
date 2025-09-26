@@ -91,13 +91,15 @@ func (m *MockExchanger) EXPECT() *MockExchangerMockRecorder {
 }
 
 // Exchange mocks base method.
-func (m *MockExchanger) Exchange(ctx context.Context, userID uuid.UUID, fromCurrency, toCurrency string, amount float64) (float32, map[string]float64, error) {
+func (m *MockExchanger) Exchange(ctx context.Context, userID uuid.UUID, fromCurrency, toCurrency string, amount float64) (float32, float64, float64, float64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Exchange", ctx, userID, fromCurrency, toCurrency, amount)
 	ret0, _ := ret[0].(float32)
-	ret1, _ := ret[1].(map[string]float64)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := ret[1].(float64)
+	ret2, _ := ret[2].(float64)
+	ret3, _ := ret[3].(float64)
+	ret4, _ := ret[4].(error)
+	return ret0, ret1, ret2, ret3, ret4
 }
 
 // Exchange indicates an expected call of Exchange.

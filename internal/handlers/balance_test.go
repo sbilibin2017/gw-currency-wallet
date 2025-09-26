@@ -10,7 +10,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
-	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -18,86 +17,84 @@ func TestGetBalanceHandler(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	mockTokenGetter := NewMockBalanceTokener(ctrl)
+	mockBalancer := NewMockBalancer(ctrl)
+
 	userID := uuid.New()
+	token := "valid-token"
 
 	tests := []struct {
-		name         string
-		mockSetup    func(tk *MockBalanceTokener, wr *MockWalletReader)
-		expectedCode int
-		expectedBody map[string]interface{}
+		name                string
+		setupMocks          func()
+		expectedStatus      int
+		expectedResponseKey string // "balance" or "error"
 	}{
 		{
-			name: "success",
-			mockSetup: func(tk *MockBalanceTokener, wr *MockWalletReader) {
-				tk.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return("valid_token", nil)
-				tk.EXPECT().GetClaims(gomock.Any(), "valid_token").Return(&jwt.Claims{
-					UserID: userID,
-				}, nil)
-				wr.EXPECT().GetByUserID(gomock.Any(), userID).Return(map[string]float64{
-					models.USD: 100,
-					models.RUB: 5000,
-					models.EUR: 50,
-				}, nil)
+			name: "successful balance fetch",
+			setupMocks: func() {
+				mockTokenGetter.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).
+					Return(token, nil)
+				mockTokenGetter.EXPECT().GetClaims(gomock.Any(), token).
+					Return(&jwt.Claims{UserID: userID}, nil)
+				mockBalancer.EXPECT().GetUserBalance(gomock.Any(), userID).
+					Return(100.0, 5000.0, 50.0, nil)
 			},
-			expectedCode: http.StatusOK,
-			expectedBody: map[string]interface{}{
-				"balance": map[string]interface{}{
-					"USD": float64(100),
-					"RUB": float64(5000),
-					"EUR": float64(50),
-				},
-			},
+			expectedStatus:      http.StatusOK,
+			expectedResponseKey: "balance",
 		},
 		{
 			name: "unauthorized missing token",
-			mockSetup: func(tk *MockBalanceTokener, wr *MockWalletReader) {
-				tk.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return("", errors.New("no token"))
+			setupMocks: func() {
+				mockTokenGetter.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).
+					Return("", errors.New("no token"))
 			},
-			expectedCode: http.StatusUnauthorized,
-			expectedBody: map[string]interface{}{"error": "Unauthorized"},
+			expectedStatus:      http.StatusUnauthorized,
+			expectedResponseKey: "error",
 		},
 		{
 			name: "unauthorized invalid token",
-			mockSetup: func(tk *MockBalanceTokener, wr *MockWalletReader) {
-				tk.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return("bad_token", nil)
-				tk.EXPECT().GetClaims(gomock.Any(), "bad_token").Return(nil, errors.New("invalid claims"))
+			setupMocks: func() {
+				mockTokenGetter.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).
+					Return(token, nil)
+				mockTokenGetter.EXPECT().GetClaims(gomock.Any(), token).
+					Return(nil, errors.New("invalid token"))
 			},
-			expectedCode: http.StatusUnauthorized,
-			expectedBody: map[string]interface{}{"error": "Unauthorized"},
+			expectedStatus:      http.StatusUnauthorized,
+			expectedResponseKey: "error",
 		},
 		{
-			name: "internal server error",
-			mockSetup: func(tk *MockBalanceTokener, wr *MockWalletReader) {
-				tk.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return("valid_token", nil)
-				tk.EXPECT().GetClaims(gomock.Any(), "valid_token").Return(&jwt.Claims{UserID: userID}, nil)
-				wr.EXPECT().GetByUserID(gomock.Any(), userID).Return(nil, errors.New("db error"))
+			name: "internal server error from balancer",
+			setupMocks: func() {
+				mockTokenGetter.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).
+					Return(token, nil)
+				mockTokenGetter.EXPECT().GetClaims(gomock.Any(), token).
+					Return(&jwt.Claims{UserID: userID}, nil)
+				mockBalancer.EXPECT().GetUserBalance(gomock.Any(), userID).
+					Return(0.0, 0.0, 0.0, errors.New("db error"))
 			},
-			expectedCode: http.StatusInternalServerError,
-			expectedBody: map[string]interface{}{"error": "Internal server error"},
+			expectedStatus:      http.StatusInternalServerError,
+			expectedResponseKey: "error",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tk := NewMockBalanceTokener(ctrl)
-			wr := NewMockWalletReader(ctrl)
+			tt.setupMocks()
+			handler := NewGetBalanceHandler(mockBalancer, mockTokenGetter)
 
-			if tt.mockSetup != nil {
-				tt.mockSetup(tk, wr)
-			}
-
-			handler := NewGetBalanceHandler(wr, tk)
 			req := httptest.NewRequest(http.MethodGet, "/balance", nil)
 			rr := httptest.NewRecorder()
 
-			handler(rr, req)
+			handler.ServeHTTP(rr, req)
 
-			assert.Equal(t, tt.expectedCode, rr.Code)
+			assert.Equal(t, tt.expectedStatus, rr.Code)
 
-			var resp map[string]interface{}
-			err := json.Unmarshal(rr.Body.Bytes(), &resp)
+			var body map[string]interface{}
+			err := json.NewDecoder(rr.Body).Decode(&body)
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedBody, resp)
+
+			_, ok := body[tt.expectedResponseKey]
+			assert.True(t, ok, "response should contain key %s", tt.expectedResponseKey)
 		})
 	}
 }

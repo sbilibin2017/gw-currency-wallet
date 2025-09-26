@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
-	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
 )
 
 // BalanceTokener defines only the methods needed by this handler.
@@ -17,9 +16,12 @@ type BalanceTokener interface {
 	GetClaims(ctx context.Context, tokenString string) (*jwt.Claims, error)
 }
 
-// WalletReader defines the interface that the service must implement.
-type WalletReader interface {
-	GetByUserID(ctx context.Context, userID uuid.UUID) (map[string]float64, error)
+// Balancer defines the interface that the service must implement.
+type Balancer interface {
+	GetUserBalance(
+		ctx context.Context,
+		userID uuid.UUID,
+	) (usd, rub, eur float64, err error)
 }
 
 // CurrencyBalance represents balances for different currencies
@@ -64,7 +66,7 @@ type BalanceErrorResponse struct {
 // @Router /balance [get]
 // @Security BearerAuth
 func NewGetBalanceHandler(
-	walletReader WalletReader,
+	balancer Balancer,
 	tokenGetter BalanceTokener,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +92,7 @@ func NewGetBalanceHandler(
 			return
 		}
 
-		balances, err := walletReader.GetByUserID(ctx, claims.UserID)
+		usd, rub, eur, err := balancer.GetUserBalance(ctx, claims.UserID)
 		if err != nil {
 			logger.Log.Errorw("failed to get balance", "userID", claims.UserID, "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -100,21 +102,14 @@ func NewGetBalanceHandler(
 			return
 		}
 
-		balance := CurrencyBalance{}
-
-		if val, ok := balances[models.USD]; ok {
-			balance.USD = val
-		}
-		if val, ok := balances[models.RUB]; ok {
-			balance.RUB = val
-		}
-		if val, ok := balances[models.EUR]; ok {
-			balance.EUR = val
-		}
-
 		resp := BalanceResponse{
-			Balance: &balance,
+			Balance: &CurrencyBalance{
+				USD: usd,
+				RUB: rub,
+				EUR: eur,
+			},
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(resp)

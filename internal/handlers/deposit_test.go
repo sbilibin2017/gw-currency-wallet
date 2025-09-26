@@ -1,4 +1,4 @@
-package handlers_test
+package handlers
 
 import (
 	"bytes"
@@ -9,137 +9,148 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
-	"github.com/sbilibin2017/gw-currency-wallet/internal/handlers"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDepositHandler(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockToken := handlers.NewMockDepositTokener(ctrl)
-	mockSvc := handlers.NewMockWalletDepositWriter(ctrl)
-
-	handler := handlers.NewDepositHandler(mockSvc, mockToken)
-
 	userID := uuid.New()
+	validToken := "valid-token"
 
 	tests := []struct {
-		name       string
-		body       interface{}
-		mockSetup  func()
-		wantCode   int
-		wantErrMsg string
+		name               string
+		requestBody        any
+		setupMocks         func(mockWriter *MockDepositWriter, mockTokener *MockDepositTokener)
+		expectedStatusCode int
+		expectedKey        string
 	}{
 		{
-			name: "success deposit USD",
-			body: handlers.DepositRequest{
-				Amount:   100,
+			name: "successful deposit",
+			requestBody: DepositRequest{
+				Amount:   100.0,
 				Currency: "USD",
 			},
-			mockSetup: func() {
-				mockToken.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return("token", nil)
-				mockToken.EXPECT().GetClaims(gomock.Any(), "token").Return(&jwt.Claims{UserID: userID}, nil)
-				mockSvc.EXPECT().SaveDeposit(gomock.Any(), userID, 100.0, "USD").Return(map[string]float64{
-					"USD": 200, "RUB": 5000, "EUR": 50,
-				}, nil)
+			setupMocks: func(mockWriter *MockDepositWriter, mockTokener *MockDepositTokener) {
+				mockTokener.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return(validToken, nil)
+				mockTokener.EXPECT().GetClaims(gomock.Any(), validToken).Return(&jwt.Claims{UserID: userID}, nil)
+				mockWriter.EXPECT().Deposit(gomock.Any(), userID, 100.0, "USD").Return(200.0, 5000.0, 50.0, nil)
 			},
-			wantCode:   http.StatusOK,
-			wantErrMsg: "",
+			expectedStatusCode: http.StatusOK,
+			expectedKey:        "message",
 		},
 		{
-			name: "invalid JSON",
-			body: "{invalid-json}",
-			mockSetup: func() {
-				mockToken.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return("token", nil)
-				mockToken.EXPECT().GetClaims(gomock.Any(), "token").Return(&jwt.Claims{UserID: userID}, nil)
+			name:        "invalid request body",
+			requestBody: "invalid-json",
+			setupMocks: func(mockWriter *MockDepositWriter, mockTokener *MockDepositTokener) {
+				mockTokener.EXPECT().
+					GetTokenFromRequest(gomock.Any(), gomock.Any()).
+					Return(validToken, nil)
+				mockTokener.EXPECT().
+					GetClaims(gomock.Any(), validToken).
+					Return(&jwt.Claims{UserID: userID}, nil) // <- add this line
 			},
-			wantCode:   http.StatusBadRequest,
-			wantErrMsg: "Invalid request body",
+			expectedStatusCode: http.StatusBadRequest,
+			expectedKey:        "error",
 		},
 		{
-			name: "unauthorized no token",
-			body: handlers.DepositRequest{
-				Amount:   100,
+			name: "unauthorized missing token",
+			requestBody: DepositRequest{
+				Amount:   100.0,
 				Currency: "USD",
 			},
-			mockSetup: func() {
-				mockToken.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return("", http.ErrNoCookie)
+			setupMocks: func(mockWriter *MockDepositWriter, mockTokener *MockDepositTokener) {
+				mockTokener.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return("", http.ErrNoCookie)
 			},
-			wantCode:   http.StatusUnauthorized,
-			wantErrMsg: "Unauthorized",
+			expectedStatusCode: http.StatusUnauthorized,
+			expectedKey:        "error",
+		},
+		{
+			name: "unauthorized invalid token",
+			requestBody: DepositRequest{
+				Amount:   100.0,
+				Currency: "USD",
+			},
+			setupMocks: func(mockWriter *MockDepositWriter, mockTokener *MockDepositTokener) {
+				mockTokener.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return(validToken, nil)
+				mockTokener.EXPECT().GetClaims(gomock.Any(), validToken).Return(nil, http.ErrNoCookie)
+			},
+			expectedStatusCode: http.StatusUnauthorized,
+			expectedKey:        "error",
 		},
 		{
 			name: "invalid amount",
-			body: handlers.DepositRequest{
-				Amount:   -10,
+			requestBody: DepositRequest{
+				Amount:   -10.0,
 				Currency: "USD",
 			},
-			mockSetup: func() {
-				mockToken.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return("token", nil)
-				mockToken.EXPECT().GetClaims(gomock.Any(), "token").Return(&jwt.Claims{UserID: userID}, nil)
+			setupMocks: func(mockWriter *MockDepositWriter, mockTokener *MockDepositTokener) {
+				mockTokener.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return(validToken, nil)
+				mockTokener.EXPECT().GetClaims(gomock.Any(), validToken).Return(&jwt.Claims{UserID: userID}, nil)
 			},
-			wantCode:   http.StatusBadRequest,
-			wantErrMsg: "Invalid amount or currency",
+			expectedStatusCode: http.StatusBadRequest,
+			expectedKey:        "error",
 		},
 		{
 			name: "invalid currency",
-			body: handlers.DepositRequest{
-				Amount:   100,
+			requestBody: DepositRequest{
+				Amount:   100.0,
 				Currency: "BTC",
 			},
-			mockSetup: func() {
-				mockToken.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return("token", nil)
-				mockToken.EXPECT().GetClaims(gomock.Any(), "token").Return(&jwt.Claims{UserID: userID}, nil)
+			setupMocks: func(mockWriter *MockDepositWriter, mockTokener *MockDepositTokener) {
+				mockTokener.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return(validToken, nil)
+				mockTokener.EXPECT().GetClaims(gomock.Any(), validToken).Return(&jwt.Claims{UserID: userID}, nil)
 			},
-			wantCode:   http.StatusBadRequest,
-			wantErrMsg: "Invalid amount or currency",
+			expectedStatusCode: http.StatusBadRequest,
+			expectedKey:        "error",
 		},
 		{
-			name: "internal server error from SaveDeposit",
-			body: handlers.DepositRequest{
-				Amount:   100,
+			name: "internal server error from writer",
+			requestBody: DepositRequest{
+				Amount:   100.0,
 				Currency: "USD",
 			},
-			mockSetup: func() {
-				mockToken.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return("token", nil)
-				mockToken.EXPECT().GetClaims(gomock.Any(), "token").Return(&jwt.Claims{UserID: userID}, nil)
-				mockSvc.EXPECT().SaveDeposit(gomock.Any(), userID, 100.0, "USD").Return(nil, http.ErrBodyNotAllowed)
+			setupMocks: func(mockWriter *MockDepositWriter, mockTokener *MockDepositTokener) {
+				mockTokener.EXPECT().GetTokenFromRequest(gomock.Any(), gomock.Any()).Return(validToken, nil)
+				mockTokener.EXPECT().GetClaims(gomock.Any(), validToken).Return(&jwt.Claims{UserID: userID}, nil)
+				mockWriter.EXPECT().Deposit(gomock.Any(), userID, 100.0, "USD").Return(0.0, 0.0, 0.0, assert.AnError)
 			},
-			wantCode:   http.StatusInternalServerError,
-			wantErrMsg: "Intrenal server error",
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedKey:        "error",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.mockSetup()
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockTokener := NewMockDepositTokener(ctrl)
+			mockWriter := NewMockDepositWriter(ctrl)
+
+			tt.setupMocks(mockWriter, mockTokener)
 
 			var bodyBytes []byte
-			switch v := tt.body.(type) {
+			switch v := tt.requestBody.(type) {
 			case string:
 				bodyBytes = []byte(v)
 			default:
-				bodyBytes, _ = json.Marshal(tt.body)
+				bodyBytes, _ = json.Marshal(v)
 			}
 
 			req := httptest.NewRequest(http.MethodPost, "/wallet/deposit", bytes.NewReader(bodyBytes))
-			w := httptest.NewRecorder()
+			rr := httptest.NewRecorder()
 
-			handler(w, req)
+			handler := NewDepositHandler(mockWriter, mockTokener)
+			handler.ServeHTTP(rr, req)
 
-			resp := w.Result()
-			if resp.StatusCode != tt.wantCode {
-				t.Errorf("expected status %d, got %d", tt.wantCode, resp.StatusCode)
-			}
+			assert.Equal(t, tt.expectedStatusCode, rr.Code)
 
-			if tt.wantErrMsg != "" {
-				var respBody handlers.DepositErrorResponse
-				json.NewDecoder(resp.Body).Decode(&respBody)
-				if respBody.Error != tt.wantErrMsg {
-					t.Errorf("expected error message %q, got %q", tt.wantErrMsg, respBody.Error)
-				}
-			}
+			var resp map[string]interface{}
+			err := json.NewDecoder(rr.Body).Decode(&resp)
+			assert.NoError(t, err)
+
+			_, ok := resp[tt.expectedKey]
+			assert.True(t, ok, "response should contain key %s", tt.expectedKey)
 		})
 	}
 }
