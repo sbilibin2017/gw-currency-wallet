@@ -3,9 +3,11 @@ package repositories
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
 )
 
 // WalletWriterRepository handles wallet write operations
@@ -35,8 +37,17 @@ func (r *WalletWriterRepository) SaveDeposit(ctx context.Context, userID uuid.UU
 		}
 	}
 
-	var ignore float64
-	err := sqlx.GetContext(ctx, executor, &ignore, query, uuid.New(), userID, currency, amount)
+	var balance float64
+	err := sqlx.GetContext(ctx, executor, &balance, query, uuid.New(), userID, currency, amount)
+
+	// Log query, args, result, error
+	logger.Log.Infow(
+		"query", strings.Join(strings.Fields(query), " "),
+		"args", []any{userID, currency, amount},
+		"result", balance,
+		"error", err,
+	)
+
 	return err
 }
 
@@ -58,8 +69,17 @@ func (r *WalletWriterRepository) SaveWithdraw(ctx context.Context, userID uuid.U
 		}
 	}
 
-	var ignore float64
-	err := sqlx.GetContext(ctx, executor, &ignore, query, uuid.New(), userID, currency, amount)
+	var balance float64
+	err := sqlx.GetContext(ctx, executor, &balance, query, uuid.New(), userID, currency, amount)
+
+	// Log query, args, result, error
+	logger.Log.Infow(
+		"query", strings.Join(strings.Fields(query), " "),
+		"args", []any{userID, currency, amount},
+		"result", balance,
+		"error", err,
+	)
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return sql.ErrNoRows
@@ -74,7 +94,6 @@ type WalletReaderRepository struct {
 	db *sqlx.DB
 }
 
-// NewWalletReaderRepository creates a new reader repository
 func NewWalletReaderRepository(db *sqlx.DB) *WalletReaderRepository {
 	return &WalletReaderRepository{db: db}
 }
@@ -92,14 +111,21 @@ func (r *WalletReaderRepository) GetByUserID(ctx context.Context, userID uuid.UU
 		Balance  float64 `db:"balance"`
 	}
 
-	if err := r.db.SelectContext(ctx, &wallets, query, userID); err != nil {
-		return nil, err
-	}
+	err := r.db.SelectContext(ctx, &wallets, query, userID)
 
+	// Convert to map
 	balances := make(map[string]float64, len(wallets))
 	for _, w := range wallets {
 		balances[w.Currency] = w.Balance
 	}
 
-	return balances, nil
+	// Log query, args, result, error
+	logger.Log.Infow(
+		"query", strings.Join(strings.Fields(query), " "),
+		"args", []any{userID},
+		"result", balances,
+		"error", err,
+	)
+
+	return balances, err
 }

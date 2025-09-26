@@ -64,6 +64,7 @@ func NewRegisterHandler(svc Registerer) http.HandlerFunc {
 		var req RegisterRequest
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			logger.Log.Errorw("failed to decode register request", "error", err)
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(RegisterErrorResponse{
 				Error: "Username or email already exists",
@@ -75,12 +76,13 @@ func NewRegisterHandler(svc Registerer) http.HandlerFunc {
 		if err != nil {
 			switch err {
 			case services.ErrUserAlreadyExists:
+				logger.Log.Warnw("register attempt failed: user already exists", "username", req.Username, "email", req.Email)
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(RegisterErrorResponse{
 					Error: "Username or email already exists",
 				})
 			default:
-				logger.Log.Errorw("internal server error", "err", err)
+				logger.Log.Errorw("internal server error during registration", "username", req.Username, "email", req.Email, "error", err)
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(RegisterErrorResponse{
 					Error: "Internal server error",

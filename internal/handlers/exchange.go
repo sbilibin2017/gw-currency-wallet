@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/services"
 )
 
@@ -102,6 +103,7 @@ func NewExchangeHandler(
 
 		tokenStr, err := tokener.GetTokenFromRequest(ctx, r)
 		if err != nil {
+			logger.Log.Errorw("failed to get token from request", "error", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(ExchangeErrorResponse{Error: "unauthorized"})
 			return
@@ -109,6 +111,7 @@ func NewExchangeHandler(
 
 		claims, err := tokener.GetClaims(ctx, tokenStr)
 		if err != nil {
+			logger.Log.Errorw("failed to get claims from token", "error", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(ExchangeErrorResponse{Error: "unauthorized"})
 			return
@@ -117,6 +120,7 @@ func NewExchangeHandler(
 
 		var req ExchangeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Amount <= 0 {
+			logger.Log.Errorw("invalid exchange request", "error", err)
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(ExchangeErrorResponse{Error: "Insufficient funds or invalid currencies"})
 			return
@@ -124,6 +128,7 @@ func NewExchangeHandler(
 
 		exchangedAmount, usd, rub, eur, err := exchanger.Exchange(ctx, userID, req.FromCurrency, req.ToCurrency, req.Amount)
 		if err != nil {
+			logger.Log.Error(err)
 			switch {
 			case errors.Is(err, services.ErrInsufficientFunds):
 				w.WriteHeader(http.StatusBadRequest)

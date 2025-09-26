@@ -166,6 +166,7 @@ func parseConfig(path string) (
 }
 
 // run initializes logger, DB, Redis, gRPC, JWT, services, handlers, router and handles shutdown
+// run initializes logger, DB, Redis, gRPC, JWT, services, handlers, router, and handles graceful shutdown.
 func run(ctx context.Context,
 	appHost, appPort string,
 	pgHost string, pgPort int, pgUser, pgPassword, pgDB string,
@@ -175,6 +176,7 @@ func run(ctx context.Context,
 	gwHost, gwPort, logLevel string,
 	jwtSecretKey string, jwtExpSecond int,
 ) error {
+
 	// Logger
 	if err := logger.Initialize(logLevel); err != nil {
 		fmt.Println("failed to initialize logger:", err)
@@ -213,7 +215,7 @@ func run(ctx context.Context,
 	}
 	defer rdb.Close()
 
-	// gRPC
+	// gRPC client
 	grpcAddr := fmt.Sprintf("%s:%s", gwHost, gwPort)
 	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -255,19 +257,24 @@ func run(ctx context.Context,
 	r.Use(middleware.Recoverer)
 	r.Use(middlewares.LoggingMiddleware)
 
+	// Public routes
 	r.Post("/register", registerHandler)
 	r.Post("/login", loginHandler)
 
+	// Authenticated routes
 	authMiddleware := middlewares.AuthMiddleware(jwtService)
+	txMiddleware := middlewares.TxMiddleware(db)
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddleware)
+
 		r.Get("/balance", balanceHandler)
-		r.Post("/wallet/deposit", depositHandler)
-		r.Post("/wallet/withdraw", withdrawHandler)
+		r.With(txMiddleware).Post("/wallet/deposit", depositHandler)
+		r.With(txMiddleware).Post("/wallet/withdraw", withdrawHandler)
 		r.Get("/exchange/rates", getRatesHandler)
-		r.Post("/exchange", exchangeHandler)
+		r.With(txMiddleware).Post("/exchange", exchangeHandler)
 	})
 
+	// Swagger
 	r.Get("/swagger/*", httpSwagger.Handler(
 		httpSwagger.URL(fmt.Sprintf("http://%s:%s/swagger/doc.json", appHost, appPort)),
 	))

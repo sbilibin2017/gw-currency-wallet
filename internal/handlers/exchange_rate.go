@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/sbilibin2017/gw-currency-wallet/internal/jwt"
+	"github.com/sbilibin2017/gw-currency-wallet/internal/logger"
 )
 
 // ExchangeRatesTokener defines only the methods needed by this handler.
@@ -69,6 +70,7 @@ func NewGetExchangeRatesHandler(
 
 		tokenStr, err := tokenGetter.GetTokenFromRequest(ctx, r)
 		if err != nil {
+			logger.Log.Errorw("failed to get token from request", "error", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(ExchangeRatesErrorResponse{Error: "Unauthorized"})
 			return
@@ -76,6 +78,7 @@ func NewGetExchangeRatesHandler(
 
 		_, err = tokenGetter.GetClaims(ctx, tokenStr)
 		if err != nil {
+			logger.Log.Errorw("failed to get claims from token", "error", err)
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(ExchangeRatesErrorResponse{Error: "Unauthorized"})
 			return
@@ -83,6 +86,7 @@ func NewGetExchangeRatesHandler(
 
 		usd, rub, eur, err := reader.GetExchangeRates(ctx)
 		if err != nil {
+			logger.Log.Errorw("failed to fetch exchange rates", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(ExchangeRatesErrorResponse{Error: "Failed to retrieve exchange rates"})
 			return
