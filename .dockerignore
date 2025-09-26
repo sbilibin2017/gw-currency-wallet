@@ -1,0 +1,37 @@
+# Go build outputs
+/bin
+/build
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Vendor (if not needed in container)
+vendor/
+
+# IDE/editor files
+*.swp
+*.swo
+*.idea/
+*.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files
+config.env
+*.env
+
+# Logs
+*.log
+
+# Coverage
+coverage.out
+
+# Misc
+*.tmp

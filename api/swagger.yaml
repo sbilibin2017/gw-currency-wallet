@@ -1,0 +1,523 @@
+basePath: /api/v1
+definitions:
+  handlers.BalanceErrorResponse:
+    properties:
+      error:
+        description: |-
+          Error message
+          default: Unauthorized
+        type: string
+    type: object
+  handlers.BalanceResponse:
+    properties:
+      balance:
+        allOf:
+        - $ref: '#/definitions/handlers.CurrencyBalance'
+        description: User balances
+    type: object
+  handlers.CurrencyBalance:
+    properties:
+      EUR:
+        description: |-
+          Balance in EUR
+          default: 50.0
+        type: number
+      RUB:
+        description: |-
+          Balance in RUB
+          default: 5000.0
+        type: number
+      USD:
+        description: |-
+          Balance in USD
+          default: 100.0
+        type: number
+    type: object
+  handlers.CurrencyBalanceAfterDeposit:
+    properties:
+      EUR:
+        description: |-
+          Balance in EUR
+          default: 50.0
+        type: number
+      RUB:
+        description: |-
+          Balance in RUB
+          default: 5000.0
+        type: number
+      USD:
+        description: |-
+          Balance in USD
+          default: 100.0
+        type: number
+    type: object
+  handlers.CurrencyBalanceAfterWithdraw:
+    properties:
+      EUR:
+        description: |-
+          Balance in EUR
+          default: 50.0
+        type: number
+      RUB:
+        description: |-
+          Balance in RUB
+          default: 5000.0
+        type: number
+      USD:
+        description: |-
+          Balance in USD
+          default: 100.0
+        type: number
+    type: object
+  handlers.DepositErrorResponse:
+    properties:
+      error:
+        description: |-
+          Error message
+          default: Invalid amount or currency
+        type: string
+    type: object
+  handlers.DepositRequest:
+    properties:
+      amount:
+        description: |-
+          Amount to deposit
+          required: true
+          default: 100.0
+        type: number
+      currency:
+        description: |-
+          Currency
+          required: true
+          default: USD
+        type: string
+    type: object
+  handlers.DepositResponse:
+    properties:
+      message:
+        description: |-
+          Success message
+          default: Account topped up successfully
+        type: string
+      new_balance:
+        allOf:
+        - $ref: '#/definitions/handlers.CurrencyBalanceAfterDeposit'
+        description: New balance of the user
+    type: object
+  handlers.ExchangeErrorResponse:
+    properties:
+      error:
+        description: |-
+          Error message
+          default: Insufficient funds or invalid currencies
+        type: string
+    type: object
+  handlers.ExchangeRates:
+    properties:
+      EUR:
+        description: |-
+          EUR exchange rate
+          default: 0.85
+        type: number
+      RUB:
+        description: |-
+          RUB exchange rate
+          default: 90.0
+        type: number
+      USD:
+        description: |-
+          USD exchange rate
+          default: 1.0
+        type: number
+    type: object
+  handlers.ExchangeRatesErrorResponse:
+    properties:
+      error:
+        description: |-
+          Error message
+          default: Failed to retrieve exchange rates
+        type: string
+    type: object
+  handlers.ExchangeRatesResponse:
+    properties:
+      rates:
+        allOf:
+        - $ref: '#/definitions/handlers.ExchangeRates'
+        description: Exchange rates
+    type: object
+  handlers.ExchangeRequest:
+    properties:
+      amount:
+        description: |-
+          Amount to exchange
+          required: true
+          default: 100.0
+        type: number
+      from_currency:
+        description: |-
+          Source currency
+          required: true
+          default: USD
+        type: string
+      to_currency:
+        description: |-
+          Target currency
+          required: true
+          default: EUR
+        type: string
+    type: object
+  handlers.ExchangeResponse:
+    properties:
+      exchanged_amount:
+        description: |-
+          Amount received after exchange
+          default: 85.0
+        type: number
+      message:
+        description: |-
+          Success message
+          default: Exchange successful
+        type: string
+      new_balance:
+        allOf:
+        - $ref: '#/definitions/handlers.ExchangedBalance'
+        description: New balance after exchange
+    type: object
+  handlers.ExchangedBalance:
+    properties:
+      EUR:
+        description: |-
+          Balance in EUR
+          default: 50.0
+        type: number
+      RUB:
+        description: |-
+          Balance in RUB
+          default: 5000.0
+        type: number
+      USD:
+        description: |-
+          Balance in USD
+          default: 100.0
+        type: number
+    type: object
+  handlers.LoginErrorResponse:
+    properties:
+      error:
+        description: |-
+          Error message
+          default: Invalid username or password
+        type: string
+    type: object
+  handlers.LoginRequest:
+    properties:
+      password:
+        description: |-
+          Password
+          required: true
+          default: secret123
+        type: string
+      username:
+        description: |-
+          Username
+          required: true
+          default: john_doe
+        type: string
+    type: object
+  handlers.LoginResponse:
+    properties:
+      token:
+        description: |-
+          JWT token
+          default: JWT_TOKEN
+        type: string
+    type: object
+  handlers.RegisterErrorResponse:
+    properties:
+      error:
+        description: |-
+          Error message
+          default: Username or email already exists
+        type: string
+    type: object
+  handlers.RegisterRequest:
+    properties:
+      email:
+        description: |-
+          Email
+          required: true
+          default: john@example.com
+        type: string
+      password:
+        description: |-
+          Password
+          required: true
+          default: secret123
+        type: string
+      username:
+        description: |-
+          Username
+          required: true
+          default: john_doe
+        type: string
+    type: object
+  handlers.RegisterResponse:
+    properties:
+      message:
+        description: |-
+          Success message
+          default: User registered successfully
+        type: string
+    type: object
+  handlers.WithdrawErrorResponse:
+    properties:
+      error:
+        description: |-
+          Error message
+          default: Insufficient funds or invalid amount
+        type: string
+    type: object
+  handlers.WithdrawRequest:
+    properties:
+      amount:
+        description: |-
+          Amount to withdraw
+          required: true
+          default: 50.0
+        type: number
+      currency:
+        description: |-
+          Currency
+          required: true
+          default: USD
+        type: string
+    type: object
+  handlers.WithdrawResponse:
+    properties:
+      message:
+        description: |-
+          Success message
+          default: Withdrawal successful
+        type: string
+      new_balance:
+        allOf:
+        - $ref: '#/definitions/handlers.CurrencyBalanceAfterWithdraw'
+        description: New balance of the user
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Microservice for managing user wallets and currency exchange
+  title: gw-currency-wallet API
+  version: 1.0.0
+paths:
+  /balance:
+    get:
+      description: Returns balances for all supported currencies
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User balance
+          schema:
+            $ref: '#/definitions/handlers.BalanceResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.BalanceErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handlers.BalanceErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user balance
+      tags:
+      - wallet
+  /exchange:
+    post:
+      consumes:
+      - application/json
+      description: Exchange funds from one currency to another. Checks user balance
+        and updates it accordingly.
+      parameters:
+      - description: Exchange Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ExchangeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Exchange successful
+          schema:
+            $ref: '#/definitions/handlers.ExchangeResponse'
+        "400":
+          description: Insufficient funds or invalid currencies
+          schema:
+            $ref: '#/definitions/handlers.ExchangeErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ExchangeErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Exchange currency
+      tags:
+      - exchange
+  /exchange/rates:
+    get:
+      description: Fetches current exchange rates for all supported currencies
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Exchange rates
+          schema:
+            $ref: '#/definitions/handlers.ExchangeRatesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ExchangeRatesErrorResponse'
+        "500":
+          description: Failed to retrieve exchange rates
+          schema:
+            $ref: '#/definitions/handlers.ExchangeRatesErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get exchange rates
+      tags:
+      - exchange
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user and return JWT token
+      parameters:
+      - description: Login Request
+        in: body
+        name: loginRequest
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: JWT token returned
+          schema:
+            $ref: '#/definitions/handlers.LoginResponse'
+        "400":
+          description: Invalid request body
+          schema:
+            $ref: '#/definitions/handlers.LoginErrorResponse'
+        "401":
+          description: Invalid username or password
+          schema:
+            $ref: '#/definitions/handlers.LoginErrorResponse'
+      summary: User login
+      tags:
+      - auth
+  /register:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user account. Ensures unique username and email.
+        Password is hashed before storing.
+      parameters:
+      - description: User registration request
+        in: body
+        name: registerRequest
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: User successfully registered
+          schema:
+            $ref: '#/definitions/handlers.RegisterResponse'
+        "400":
+          description: Username or email already exists / invalid request
+          schema:
+            $ref: '#/definitions/handlers.RegisterErrorResponse'
+      summary: Register a new user
+      tags:
+      - auth
+  /wallet/deposit:
+    post:
+      consumes:
+      - application/json
+      description: Add funds to user wallet. Validates amount and currency. Updates
+        user balance in the database.
+      parameters:
+      - description: Deposit Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.DepositRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Account topped up successfully
+          schema:
+            $ref: '#/definitions/handlers.DepositResponse'
+        "400":
+          description: Invalid amount or currency
+          schema:
+            $ref: '#/definitions/handlers.DepositErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.DepositErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Deposit funds
+      tags:
+      - wallet
+  /wallet/withdraw:
+    post:
+      consumes:
+      - application/json
+      description: Withdraw funds from user wallet. Validates amount and currency.
+        Checks for sufficient funds.
+      parameters:
+      - description: Withdraw Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.WithdrawRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Withdrawal successful
+          schema:
+            $ref: '#/definitions/handlers.WithdrawResponse'
+        "400":
+          description: Insufficient funds or invalid amount
+          schema:
+            $ref: '#/definitions/handlers.WithdrawErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.WithdrawErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Withdraw funds
+      tags:
+      - wallet
+schemes:
+- http
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
