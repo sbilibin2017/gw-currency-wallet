@@ -131,6 +131,19 @@
 
 ---
 
+## Покрытие
+
+| Пакет | Покрытие |
+|-------|-----------|
+| github.com/sbilibin2017/gw-currency-wallet/cmd | 76.6% |
+| github.com/sbilibin2017/gw-currency-wallet/internal/facades | 100.0% |
+| github.com/sbilibin2017/gw-currency-wallet/internal/handlers | 96.1% |
+| github.com/sbilibin2017/gw-currency-wallet/internal/jwt | 84.0% |
+| github.com/sbilibin2017/gw-currency-wallet/internal/logger | 90.0% |
+| github.com/sbilibin2017/gw-currency-wallet/internal/middlewares | 100.0% |
+| github.com/sbilibin2017/gw-currency-wallet/internal/models | [no test files] |
+| github.com/sbilibin2017/gw-currency-wallet/internal/repositories | 79.1% |
+| github.com/sbilibin2017/gw-currency-wallet/internal/services | 97.6% |
 
 ## Инструкция по развертыванию
 
