@@ -10,6 +10,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	uuid "github.com/google/uuid"
+	kafka "github.com/segmentio/kafka-go"
 )
 
 // MockWalletWriter is a mock of WalletWriter interface.
@@ -204,4 +205,60 @@ func (m *MockExchangeRateCacheReader) SetExchangeRateForCurrency(ctx context.Con
 func (mr *MockExchangeRateCacheReaderMockRecorder) SetExchangeRateForCurrency(ctx, fromCurrency, toCurrency, rate interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetExchangeRateForCurrency", reflect.TypeOf((*MockExchangeRateCacheReader)(nil).SetExchangeRateForCurrency), ctx, fromCurrency, toCurrency, rate)
+}
+
+// MockKafkaWriter is a mock of KafkaWriter interface.
+type MockKafkaWriter struct {
+	ctrl     *gomock.Controller
+	recorder *MockKafkaWriterMockRecorder
+}
+
+// MockKafkaWriterMockRecorder is the mock recorder for MockKafkaWriter.
+type MockKafkaWriterMockRecorder struct {
+	mock *MockKafkaWriter
+}
+
+// NewMockKafkaWriter creates a new mock instance.
+func NewMockKafkaWriter(ctrl *gomock.Controller) *MockKafkaWriter {
+	mock := &MockKafkaWriter{ctrl: ctrl}
+	mock.recorder = &MockKafkaWriterMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockKafkaWriter) EXPECT() *MockKafkaWriterMockRecorder {
+	return m.recorder
+}
+
+// Close mocks base method.
+func (m *MockKafkaWriter) Close() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Close")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Close indicates an expected call of Close.
+func (mr *MockKafkaWriterMockRecorder) Close() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockKafkaWriter)(nil).Close))
+}
+
+// WriteMessages mocks base method.
+func (m *MockKafkaWriter) WriteMessages(ctx context.Context, msgs ...kafka.Message) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{ctx}
+	for _, a := range msgs {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "WriteMessages", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// WriteMessages indicates an expected call of WriteMessages.
+func (mr *MockKafkaWriterMockRecorder) WriteMessages(ctx interface{}, msgs ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{ctx}, msgs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WriteMessages", reflect.TypeOf((*MockKafkaWriter)(nil).WriteMessages), varargs...)
 }

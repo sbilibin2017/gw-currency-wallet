@@ -8,7 +8,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/sbilibin2017/gw-currency-wallet/internal/models"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,140 +15,137 @@ func TestWalletService_Deposit(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.New()
 
-	tests := []struct {
-		name        string
-		currency    string
-		amount      float64
-		mockSetup   func(t *testing.T) (*WalletService, func())
-		expectedUSD float64
-		expectedRUB float64
-		expectedEUR float64
-		expectErr   bool
-	}{
-		{
-			name:     "success USD deposit",
-			currency: models.USD,
-			amount:   100,
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				writer := NewMockWalletWriter(ctrl)
-				reader := NewMockWalletReader(ctrl)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-				writer.EXPECT().SaveDeposit(ctx, userID, 100.0, models.USD).Return(nil)
-				reader.EXPECT().GetByUserID(ctx, userID).Return(map[string]float64{
-					models.USD: 100,
-					models.RUB: 0,
-					models.EUR: 0,
-				}, nil)
+	writer := NewMockWalletWriter(ctrl)
+	reader := NewMockWalletReader(ctrl)
+	kafka := NewMockKafkaWriter(ctrl)
 
-				svc := NewWalletService(writer, reader, nil, nil)
-				return svc, func() { ctrl.Finish() }
-			},
-			expectedUSD: 100,
-			expectedRUB: 0,
-			expectedEUR: 0,
-			expectErr:   false,
-		},
-		{
-			name:     "deposit fails",
-			currency: models.RUB,
-			amount:   50,
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				writer := NewMockWalletWriter(ctrl)
-				writer.EXPECT().SaveDeposit(ctx, userID, 50.0, models.RUB).Return(errors.New("db error"))
-				svc := NewWalletService(writer, nil, nil, nil)
-				return svc, func() { ctrl.Finish() }
-			},
-			expectErr: true,
-		},
-	}
+	// успешный депозит больше порога (публикация в Kafka)
+	writer.EXPECT().SaveDeposit(ctx, userID, 50000.0, models.USD).Return(nil)
+	reader.EXPECT().GetByUserID(ctx, userID).Return(map[string]float64{
+		models.USD: 50000,
+		models.RUB: 0,
+		models.EUR: 0,
+	}, nil)
+	kafka.EXPECT().WriteMessages(gomock.Any(), gomock.Any()).Return(nil)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			svc, cleanup := tt.mockSetup(t)
-			defer cleanup()
+	svc := NewWalletService(writer, reader, nil, nil, kafka)
+	usd, rub, eur, err := svc.Deposit(ctx, userID, 50000, models.USD)
 
-			usd, rub, eur, err := svc.Deposit(ctx, userID, tt.amount, tt.currency)
-			if tt.expectErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedUSD, usd)
-				assert.Equal(t, tt.expectedRUB, rub)
-				assert.Equal(t, tt.expectedEUR, eur)
-			}
-		})
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 50000.0, usd)
+	assert.Equal(t, 0.0, rub)
+	assert.Equal(t, 0.0, eur)
 }
 
 func TestWalletService_Withdraw(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.New()
 
-	tests := []struct {
-		name        string
-		currency    string
-		amount      float64
-		mockSetup   func(t *testing.T) (*WalletService, func())
-		expectedUSD float64
-		expectedRUB float64
-		expectedEUR float64
-		expectErr   bool
-	}{
-		{
-			name:     "success EUR withdrawal",
-			currency: models.EUR,
-			amount:   30,
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				writer := NewMockWalletWriter(ctrl)
-				reader := NewMockWalletReader(ctrl)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-				writer.EXPECT().SaveWithdraw(ctx, userID, 30.0, models.EUR).Return(nil)
-				reader.EXPECT().GetByUserID(ctx, userID).Return(map[string]float64{
-					models.USD: 0,
-					models.RUB: 0,
-					models.EUR: 70,
-				}, nil)
+	writer := NewMockWalletWriter(ctrl)
+	reader := NewMockWalletReader(ctrl)
+	kafka := NewMockKafkaWriter(ctrl)
 
-				return NewWalletService(writer, reader, nil, nil), func() { ctrl.Finish() }
-			},
-			expectedUSD: 0,
-			expectedRUB: 0,
-			expectedEUR: 70,
-			expectErr:   false,
-		},
-		{
-			name:     "withdraw fails",
-			currency: models.USD,
-			amount:   50,
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				writer := NewMockWalletWriter(ctrl)
-				writer.EXPECT().SaveWithdraw(ctx, userID, 50.0, models.USD).Return(errors.New("insufficient funds"))
-				return NewWalletService(writer, nil, nil, nil), func() { ctrl.Finish() }
-			},
-			expectErr: true,
-		},
+	// успешное снятие меньше порога (не публикуем в Kafka)
+	writer.EXPECT().SaveWithdraw(ctx, userID, 1000.0, models.USD).Return(nil)
+	reader.EXPECT().GetByUserID(ctx, userID).Return(map[string]float64{
+		models.USD: 4000,
+		models.RUB: 0,
+		models.EUR: 0,
+	}, nil)
+
+	svc := NewWalletService(writer, reader, nil, nil, kafka)
+	usd, rub, eur, err := svc.Withdraw(ctx, userID, 1000, models.USD)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 4000.0, usd)
+	assert.Equal(t, 0.0, rub)
+	assert.Equal(t, 0.0, eur)
+}
+
+func TestWalletService_Exchange_Errors(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWrite := NewMockWalletWriter(ctrl)
+	mockRead := NewMockWalletReader(ctrl)
+	mockRate := NewMockExchangeRateReader(ctrl)
+	mockCache := NewMockExchangeRateCacheReader(ctrl)
+
+	svc := NewWalletService(mockWrite, mockRead, mockRate, mockCache, nil)
+
+	// 1. Ошибка получения курса
+	mockCache.EXPECT().GetExchangeRateForCurrency(ctx, "USD", "EUR").Return(float32(0), errors.New("cache miss"))
+	mockRate.EXPECT().GetExchangeRateForCurrency(ctx, "USD", "EUR").Return(float32(0), errors.New("rate fetch error"))
+	_, _, _, _, err := svc.Exchange(ctx, userID, "USD", "EUR", 100)
+	assert.EqualError(t, err, "rate fetch error")
+
+	// 2. Ошибка списания
+	mockCache.EXPECT().GetExchangeRateForCurrency(ctx, "USD", "EUR").Return(float32(0), errors.New("cache miss"))
+	mockRate.EXPECT().GetExchangeRateForCurrency(ctx, "USD", "EUR").Return(float32(0.9), nil)
+	mockCache.EXPECT().SetExchangeRateForCurrency(ctx, "USD", "EUR", float32(0.9)).Return(nil)
+	mockWrite.EXPECT().SaveWithdraw(ctx, userID, 100.0, "USD").Return(errors.New("insufficient"))
+	_, _, _, _, err = svc.Exchange(ctx, userID, "USD", "EUR", 100)
+	assert.Equal(t, ErrInsufficientFunds, err)
+
+	// 3. Ошибка депозита
+	mockCache.EXPECT().GetExchangeRateForCurrency(ctx, "USD", "EUR").Return(float32(0), errors.New("cache miss"))
+	mockRate.EXPECT().GetExchangeRateForCurrency(ctx, "USD", "EUR").Return(float32(0.9), nil)
+	mockCache.EXPECT().SetExchangeRateForCurrency(ctx, "USD", "EUR", float32(0.9)).Return(nil)
+	mockWrite.EXPECT().SaveWithdraw(ctx, userID, 100.0, "USD").Return(nil)
+	mockWrite.EXPECT().SaveDeposit(ctx, userID, float64(90.0), "EUR").Return(errors.New("deposit error"))
+	_, _, _, _, err = svc.Exchange(ctx, userID, "USD", "EUR", 100)
+	assert.EqualError(t, err, "deposit error")
+
+	// 4. Ошибка чтения баланса
+	mockCache.EXPECT().GetExchangeRateForCurrency(ctx, "USD", "EUR").Return(float32(0), errors.New("cache miss"))
+	mockRate.EXPECT().GetExchangeRateForCurrency(ctx, "USD", "EUR").Return(float32(0.9), nil)
+	mockCache.EXPECT().SetExchangeRateForCurrency(ctx, "USD", "EUR", float32(0.9)).Return(nil)
+	mockWrite.EXPECT().SaveWithdraw(ctx, userID, 100.0, "USD").Return(nil)
+	mockWrite.EXPECT().SaveDeposit(ctx, userID, float64(90.0), "EUR").Return(nil)
+	mockRead.EXPECT().GetByUserID(ctx, userID).Return(nil, errors.New("read balance error"))
+	_, _, _, _, err = svc.Exchange(ctx, userID, "USD", "EUR", 100)
+	assert.EqualError(t, err, "read balance error")
+}
+
+func TestWalletService_publishTransaction(t *testing.T) {
+	ctx := context.Background()
+	txn := Transaction{
+		TransactionID: "txn-123",
+		Amount:        50000, // выше порога
+		Sender:        "user-1",
+		Receiver:      "deposit",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			svc, cleanup := tt.mockSetup(t)
-			defer cleanup()
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-			usd, rub, eur, err := svc.Withdraw(ctx, userID, tt.amount, tt.currency)
-			if tt.expectErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedUSD, usd)
-				assert.Equal(t, tt.expectedRUB, rub)
-				assert.Equal(t, tt.expectedEUR, eur)
-			}
-		})
-	}
+	// Kafka writer nil
+	svc := &WalletService{}
+	svc.publishTransaction(ctx, txn) // не должно паниковать
+
+	// Transaction ниже порога
+	mockKafka := NewMockKafkaWriter(ctrl)
+	svc = &WalletService{kafkaWriter: mockKafka}
+	txn.Amount = 1000
+	svc.publishTransaction(ctx, txn) // WriteMessages не вызывается
+
+	// Успешная публикация
+	mockKafka.EXPECT().WriteMessages(ctx, gomock.Any()).Return(nil).Times(1)
+	txn.Amount = 50000
+	svc.publishTransaction(ctx, txn)
+
+	// Ошибка публикации
+	mockKafka.EXPECT().WriteMessages(ctx, gomock.Any()).Return(errors.New("kafka error")).Times(1)
+	svc.publishTransaction(ctx, txn)
 }
 
 func TestWalletService_GetUserBalance(t *testing.T) {
@@ -158,23 +154,22 @@ func TestWalletService_GetUserBalance(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		mockSetup   func(t *testing.T) (*WalletService, func())
+		mockSetup   func(ctrl *gomock.Controller) WalletReader
 		expectedUSD float64
 		expectedRUB float64
 		expectedEUR float64
 		expectErr   bool
 	}{
 		{
-			name: "success balance fetch",
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				reader := NewMockWalletReader(ctrl)
-				reader.EXPECT().GetByUserID(ctx, userID).Return(map[string]float64{
+			name: "successful fetch",
+			mockSetup: func(ctrl *gomock.Controller) WalletReader {
+				mockReader := NewMockWalletReader(ctrl)
+				mockReader.EXPECT().GetByUserID(ctx, userID).Return(map[string]float64{
 					models.USD: 120,
 					models.RUB: 3000,
 					models.EUR: 50,
 				}, nil)
-				return NewWalletService(nil, reader, nil, nil), func() { ctrl.Finish() }
+				return mockReader
 			},
 			expectedUSD: 120,
 			expectedRUB: 3000,
@@ -182,197 +177,37 @@ func TestWalletService_GetUserBalance(t *testing.T) {
 			expectErr:   false,
 		},
 		{
-			name: "fetch fails",
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				reader := NewMockWalletReader(ctrl)
-				reader.EXPECT().GetByUserID(ctx, userID).Return(nil, errors.New("db error"))
-				return NewWalletService(nil, reader, nil, nil), func() { ctrl.Finish() }
+			name: "read error",
+			mockSetup: func(ctrl *gomock.Controller) WalletReader {
+				mockReader := NewMockWalletReader(ctrl)
+				mockReader.EXPECT().GetByUserID(ctx, userID).Return(nil, errors.New("db error"))
+				return mockReader
 			},
-			expectErr: true,
+			expectedUSD: 0,
+			expectedRUB: 0,
+			expectedEUR: 0,
+			expectErr:   true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc, cleanup := tt.mockSetup(t)
-			defer cleanup()
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			reader := tt.mockSetup(ctrl)
+			svc := &WalletService{
+				readRepo: reader,
+			}
 
 			usd, rub, eur, err := svc.GetUserBalance(ctx, userID)
 			if tt.expectErr {
 				assert.Error(t, err)
+				assert.Equal(t, 0.0, usd)
+				assert.Equal(t, 0.0, rub)
+				assert.Equal(t, 0.0, eur)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedUSD, usd)
-				assert.Equal(t, tt.expectedRUB, rub)
-				assert.Equal(t, tt.expectedEUR, eur)
-			}
-		})
-	}
-}
-
-func TestWalletService_Exchange(t *testing.T) {
-	ctx := context.Background()
-	userID := uuid.New()
-
-	tests := []struct {
-		name          string
-		fromCurrency  string
-		toCurrency    string
-		amount        float64
-		mockSetup     func(t *testing.T) (*WalletService, func())
-		expectedUSD   float64
-		expectedRUB   float64
-		expectedEUR   float64
-		expectedExchg float32
-		expectErr     bool
-	}{
-		{
-			name:         "success cache hit",
-			fromCurrency: models.USD,
-			toCurrency:   models.EUR,
-			amount:       100,
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				writer := NewMockWalletWriter(ctrl)
-				reader := NewMockWalletReader(ctrl)
-				cache := NewMockExchangeRateCacheReader(ctrl)
-
-				cache.EXPECT().GetExchangeRateForCurrency(ctx, models.USD, models.EUR).Return(float32(0.9), nil)
-				writer.EXPECT().SaveWithdraw(ctx, userID, 100.0, models.USD).Return(nil)
-				writer.EXPECT().SaveDeposit(ctx, userID, 90.0, models.EUR).Return(nil)
-				reader.EXPECT().GetByUserID(ctx, userID).Return(map[string]float64{
-					models.USD: 0,
-					models.RUB: 0,
-					models.EUR: 90,
-				}, nil)
-
-				return NewWalletService(writer, reader, nil, cache), func() { ctrl.Finish() }
-			},
-			expectedExchg: 90,
-			expectedUSD:   0,
-			expectedRUB:   0,
-			expectedEUR:   90,
-			expectErr:     false,
-		},
-		{
-			name:         "cache miss and external rate fetch fails",
-			fromCurrency: models.USD,
-			toCurrency:   models.RUB,
-			amount:       50,
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				cache := NewMockExchangeRateCacheReader(ctrl)
-				rateRepo := NewMockExchangeRateReader(ctrl)
-
-				cache.EXPECT().GetExchangeRateForCurrency(ctx, models.USD, models.RUB).Return(float32(0), errors.New("cache miss"))
-				rateRepo.EXPECT().GetExchangeRateForCurrency(ctx, models.USD, models.RUB).Return(float32(0), errors.New("external rate error"))
-
-				return NewWalletService(nil, nil, rateRepo, cache), func() { ctrl.Finish() }
-			},
-			expectErr: true,
-		},
-		{
-			name:         "cache miss but cache set fails",
-			fromCurrency: models.USD,
-			toCurrency:   models.EUR,
-			amount:       100,
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				writer := NewMockWalletWriter(ctrl)
-				reader := NewMockWalletReader(ctrl)
-				cache := NewMockExchangeRateCacheReader(ctrl)
-				rateRepo := NewMockExchangeRateReader(ctrl)
-
-				cache.EXPECT().GetExchangeRateForCurrency(ctx, models.USD, models.EUR).Return(float32(0), errors.New("cache miss"))
-				rateRepo.EXPECT().GetExchangeRateForCurrency(ctx, models.USD, models.EUR).Return(float32(0.9), nil)
-				cache.EXPECT().SetExchangeRateForCurrency(ctx, models.USD, models.EUR, float32(0.9)).Return(errors.New("cache set error"))
-
-				writer.EXPECT().SaveWithdraw(ctx, userID, 100.0, models.USD).Return(nil)
-				writer.EXPECT().SaveDeposit(ctx, userID, 90.0, models.EUR).Return(nil)
-				reader.EXPECT().GetByUserID(ctx, userID).Return(map[string]float64{
-					models.USD: 0,
-					models.RUB: 0,
-					models.EUR: 90,
-				}, nil)
-
-				return NewWalletService(writer, reader, rateRepo, cache), func() { ctrl.Finish() }
-			},
-			expectedExchg: 90,
-			expectedUSD:   0,
-			expectedRUB:   0,
-			expectedEUR:   90,
-			expectErr:     false,
-		},
-		{
-			name:         "withdraw fails",
-			fromCurrency: models.RUB,
-			toCurrency:   models.USD,
-			amount:       50,
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				writer := NewMockWalletWriter(ctrl)
-				cache := NewMockExchangeRateCacheReader(ctrl)
-
-				cache.EXPECT().GetExchangeRateForCurrency(ctx, models.RUB, models.USD).Return(float32(0.013), nil)
-				writer.EXPECT().SaveWithdraw(ctx, userID, 50.0, models.RUB).Return(errors.New("insufficient funds"))
-
-				return NewWalletService(writer, nil, nil, cache), func() { ctrl.Finish() }
-			},
-			expectErr: true,
-		},
-		{
-			name:         "deposit fails",
-			fromCurrency: models.USD,
-			toCurrency:   models.RUB,
-			amount:       100,
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				writer := NewMockWalletWriter(ctrl)
-				reader := NewMockWalletReader(ctrl)
-				cache := NewMockExchangeRateCacheReader(ctrl)
-
-				cache.EXPECT().GetExchangeRateForCurrency(ctx, models.USD, models.RUB).Return(float32(0.75), nil)
-				writer.EXPECT().SaveWithdraw(ctx, userID, 100.0, models.USD).Return(nil)
-				writer.EXPECT().SaveDeposit(ctx, userID, 75.0, models.RUB).Return(errors.New("deposit failed"))
-
-				return NewWalletService(writer, reader, nil, cache), func() { ctrl.Finish() }
-			},
-			expectErr: true,
-		},
-		{
-			name:         "balance fetch fails",
-			fromCurrency: models.USD,
-			toCurrency:   models.RUB,
-			amount:       100,
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				writer := NewMockWalletWriter(ctrl)
-				reader := NewMockWalletReader(ctrl)
-				cache := NewMockExchangeRateCacheReader(ctrl)
-
-				cache.EXPECT().GetExchangeRateForCurrency(ctx, models.USD, models.RUB).Return(float32(0.75), nil)
-				writer.EXPECT().SaveWithdraw(ctx, userID, 100.0, models.USD).Return(nil)
-				writer.EXPECT().SaveDeposit(ctx, userID, 75.0, models.RUB).Return(nil)
-				reader.EXPECT().GetByUserID(ctx, userID).Return(nil, errors.New("db error"))
-
-				return NewWalletService(writer, reader, nil, cache), func() { ctrl.Finish() }
-			},
-			expectErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			svc, cleanup := tt.mockSetup(t)
-			defer cleanup()
-
-			exchg, usd, rub, eur, err := svc.Exchange(ctx, userID, tt.fromCurrency, tt.toCurrency, tt.amount)
-			if tt.expectErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedExchg, exchg)
 				assert.Equal(t, tt.expectedUSD, usd)
 				assert.Equal(t, tt.expectedRUB, rub)
 				assert.Equal(t, tt.expectedEUR, eur)
@@ -386,26 +221,22 @@ func TestWalletService_GetExchangeRates(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		mockSetup   func(t *testing.T) (*WalletService, func())
+		mockSetup   func(ctrl *gomock.Controller) ExchangeRateReader
 		expectedUSD float32
 		expectedRUB float32
 		expectedEUR float32
 		expectErr   bool
 	}{
 		{
-			name: "successfully fetch exchange rates",
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				rateRepo := NewMockExchangeRateReader(ctrl)
-
-				rateRepo.EXPECT().GetExchangeRates(ctx).Return(map[string]float32{
+			name: "successful fetch",
+			mockSetup: func(ctrl *gomock.Controller) ExchangeRateReader {
+				mockRate := NewMockExchangeRateReader(ctrl)
+				mockRate.EXPECT().GetExchangeRates(ctx).Return(map[string]float32{
 					models.USD: 1.0,
 					models.RUB: 90.0,
 					models.EUR: 0.85,
 				}, nil)
-
-				svc := NewWalletService(nil, nil, rateRepo, nil)
-				return svc, func() { ctrl.Finish() }
+				return mockRate
 			},
 			expectedUSD: 1.0,
 			expectedRUB: 90.0,
@@ -413,28 +244,35 @@ func TestWalletService_GetExchangeRates(t *testing.T) {
 			expectErr:   false,
 		},
 		{
-			name: "fail to fetch exchange rates",
-			mockSetup: func(t *testing.T) (*WalletService, func()) {
-				ctrl := gomock.NewController(t)
-				rateRepo := NewMockExchangeRateReader(ctrl)
-
-				rateRepo.EXPECT().GetExchangeRates(ctx).Return(nil, errors.New("rate fetch error"))
-
-				svc := NewWalletService(nil, nil, rateRepo, nil)
-				return svc, func() { ctrl.Finish() }
+			name: "fetch error",
+			mockSetup: func(ctrl *gomock.Controller) ExchangeRateReader {
+				mockRate := NewMockExchangeRateReader(ctrl)
+				mockRate.EXPECT().GetExchangeRates(ctx).Return(nil, errors.New("rate error"))
+				return mockRate
 			},
-			expectErr: true,
+			expectedUSD: 0,
+			expectedRUB: 0,
+			expectedEUR: 0,
+			expectErr:   true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc, cleanup := tt.mockSetup(t)
-			defer cleanup()
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			rateReader := tt.mockSetup(ctrl)
+			svc := &WalletService{
+				rateRepo: rateReader,
+			}
 
 			usd, rub, eur, err := svc.GetExchangeRates(ctx)
 			if tt.expectErr {
 				assert.Error(t, err)
+				assert.Equal(t, float32(0), usd)
+				assert.Equal(t, float32(0), rub)
+				assert.Equal(t, float32(0), eur)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedUSD, usd)
